@@ -1,6 +1,6 @@
 # pi-skills
 
-A collection of skills for [pi](https://github.com/badlogic/pi-mono), compatible with Claude Code and Codex CLI.
+A collection of skills for [pi-coding-agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent), compatible with Claude Code and Codex CLI.
 
 ## Installation
 

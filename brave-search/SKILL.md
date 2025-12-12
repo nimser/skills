@@ -47,16 +47,6 @@ Content: (if --content flag used)
 ...
 ```
 
-## Rate Limiting (HTTP 429)
-
-If you get a 429 error, Brave requires a captcha. Open the search in a browser for the user to solve it:
-
-```bash
-open "https://search.brave.com/search?q=your+query"
-```
-
-After the user solves the captcha, retry the search.
-
 ## When to Use
 
 - Searching for documentation or API references

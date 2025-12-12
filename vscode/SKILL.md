@@ -1,4 +1,5 @@
 ---
+name: vscode
 description: VS Code integration for viewing diffs and comparing files. Use when showing file differences to the user.
 ---
 

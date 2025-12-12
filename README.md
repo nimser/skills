@@ -39,7 +39,9 @@ ln -s ~/pi-skills/browser-tools ~/.claude/skills/browser-tools
 ln -s ~/pi-skills/gccli ~/.claude/skills/gccli
 ln -s ~/pi-skills/gdcli ~/.claude/skills/gdcli
 ln -s ~/pi-skills/gmcli ~/.claude/skills/gmcli
+ln -s ~/pi-skills/transcribe ~/.claude/skills/transcribe
 ln -s ~/pi-skills/vscode ~/.claude/skills/vscode
+ln -s ~/pi-skills/youtube-transcript ~/.claude/skills/youtube-transcript
 
 # Or project-level
 mkdir -p .claude/skills
@@ -48,7 +50,9 @@ ln -s ~/pi-skills/browser-tools .claude/skills/browser-tools
 ln -s ~/pi-skills/gccli .claude/skills/gccli
 ln -s ~/pi-skills/gdcli .claude/skills/gdcli
 ln -s ~/pi-skills/gmcli .claude/skills/gmcli
+ln -s ~/pi-skills/transcribe .claude/skills/transcribe
 ln -s ~/pi-skills/vscode .claude/skills/vscode
+ln -s ~/pi-skills/youtube-transcript .claude/skills/youtube-transcript
 ```
 
 ## Available Skills
@@ -60,7 +64,9 @@ ln -s ~/pi-skills/vscode .claude/skills/vscode
 | [gccli](gccli/SKILL.md) | Google Calendar CLI for events and availability |
 | [gdcli](gdcli/SKILL.md) | Google Drive CLI for file management and sharing |
 | [gmcli](gmcli/SKILL.md) | Gmail CLI for email, drafts, and labels |
+| [transcribe](transcribe/SKILL.md) | Speech-to-text transcription via Groq Whisper API |
 | [vscode](vscode/SKILL.md) | VS Code integration for diffs and file comparison |
+| [youtube-transcript](youtube-transcript/SKILL.md) | Fetch YouTube video transcripts |
 
 ## Skill Format
 
@@ -89,7 +95,9 @@ Some skills require additional setup:
 - **gccli**: Requires Node.js. Install globally with `npm install -g @mariozechner/gccli`.
 - **gdcli**: Requires Node.js. Install globally with `npm install -g @mariozechner/gdcli`.
 - **gmcli**: Requires Node.js. Install globally with `npm install -g @mariozechner/gmcli`.
+- **transcribe**: Requires curl and a Groq API key.
 - **vscode**: Requires VS Code with `code` CLI in PATH.
+- **youtube-transcript**: Requires Node.js. Run `npm install` in the skill directory.
 
 ## License
 

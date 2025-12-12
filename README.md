@@ -4,7 +4,9 @@ A collection of skills for [pi-coding-agent](https://github.com/badlogic/pi-mono
 
 ## Installation
 
-Clone or download skills to your pi skills directory:
+### pi-coding-agent
+
+pi supports recursive skill discovery, so clone the entire repo:
 
 ```bash
 # User-level (available in all projects)
@@ -12,6 +14,35 @@ git clone https://github.com/badlogic/pi-skills ~/.pi/agent/skills/pi-skills
 
 # Or project-level
 git clone https://github.com/badlogic/pi-skills .pi/skills/pi-skills
+```
+
+### Codex CLI
+
+Codex also supports recursive skill discovery:
+
+```bash
+git clone https://github.com/badlogic/pi-skills ~/.codex/skills/pi-skills
+```
+
+### Claude Code
+
+Claude Code only looks one level deep for `SKILL.md` files, so each skill folder must be directly under the skills directory. Clone the repo somewhere, then symlink individual skills:
+
+```bash
+# Clone to a convenient location
+git clone https://github.com/badlogic/pi-skills ~/pi-skills
+
+# Symlink individual skills (user-level)
+mkdir -p ~/.claude/skills
+ln -s ~/pi-skills/brave-search ~/.claude/skills/brave-search
+ln -s ~/pi-skills/browser-tools ~/.claude/skills/browser-tools
+ln -s ~/pi-skills/vscode ~/.claude/skills/vscode
+
+# Or project-level
+mkdir -p .claude/skills
+ln -s ~/pi-skills/brave-search .claude/skills/brave-search
+ln -s ~/pi-skills/browser-tools .claude/skills/browser-tools
+ln -s ~/pi-skills/vscode .claude/skills/vscode
 ```
 
 ## Available Skills

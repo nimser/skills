@@ -36,12 +36,18 @@ git clone https://github.com/badlogic/pi-skills ~/pi-skills
 mkdir -p ~/.claude/skills
 ln -s ~/pi-skills/brave-search ~/.claude/skills/brave-search
 ln -s ~/pi-skills/browser-tools ~/.claude/skills/browser-tools
+ln -s ~/pi-skills/gccli ~/.claude/skills/gccli
+ln -s ~/pi-skills/gdcli ~/.claude/skills/gdcli
+ln -s ~/pi-skills/gmcli ~/.claude/skills/gmcli
 ln -s ~/pi-skills/vscode ~/.claude/skills/vscode
 
 # Or project-level
 mkdir -p .claude/skills
 ln -s ~/pi-skills/brave-search .claude/skills/brave-search
 ln -s ~/pi-skills/browser-tools .claude/skills/browser-tools
+ln -s ~/pi-skills/gccli .claude/skills/gccli
+ln -s ~/pi-skills/gdcli .claude/skills/gdcli
+ln -s ~/pi-skills/gmcli .claude/skills/gmcli
 ln -s ~/pi-skills/vscode .claude/skills/vscode
 ```
 
@@ -51,6 +57,9 @@ ln -s ~/pi-skills/vscode .claude/skills/vscode
 |-------|-------------|
 | [brave-search](brave-search/SKILL.md) | Web search and content extraction via Brave Search |
 | [browser-tools](browser-tools/SKILL.md) | Interactive browser automation via Chrome DevTools Protocol |
+| [gccli](gccli/SKILL.md) | Google Calendar CLI for events and availability |
+| [gdcli](gdcli/SKILL.md) | Google Drive CLI for file management and sharing |
+| [gmcli](gmcli/SKILL.md) | Gmail CLI for email, drafts, and labels |
 | [vscode](vscode/SKILL.md) | VS Code integration for diffs and file comparison |
 
 ## Skill Format
@@ -77,6 +86,9 @@ Some skills require additional setup:
 
 - **brave-search**: Requires Node.js. Run `npm install` in the skill directory.
 - **browser-tools**: Requires Chrome and Node.js. Run `npm install` in the skill directory.
+- **gccli**: Requires Node.js. Install globally with `npm install -g @mariozechner/gccli`.
+- **gdcli**: Requires Node.js. Install globally with `npm install -g @mariozechner/gdcli`.
+- **gmcli**: Requires Node.js. Install globally with `npm install -g @mariozechner/gmcli`.
 - **vscode**: Requires VS Code with `code` CLI in PATH.
 
 ## License

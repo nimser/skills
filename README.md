@@ -88,7 +88,7 @@ The `{baseDir}` placeholder is replaced with the skill's directory path at runti
 
 ## Requirements
 
-Some skills require additional setup:
+Some skills require additional setup. Generally, the agent will walk you through that. But if not, here you go:
 
 - **brave-search**: Requires Node.js. Run `npm install` in the skill directory.
 - **browser-tools**: Requires Chrome and Node.js. Run `npm install` in the skill directory.

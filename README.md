@@ -1,12 +1,10 @@
 # pi-skills
 
-A collection of skills for [pi-coding-agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent), compatible with Claude Code and Codex CLI.
+A collection of skills for [pi-coding-agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent), compatible with Claude Code, Codex CLI, Amp, and Droid.
 
 ## Installation
 
 ### pi-coding-agent
-
-[pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) supports recursive skill discovery, so clone the entire repo:
 
 ```bash
 # User-level (available in all projects)
@@ -18,10 +16,26 @@ git clone https://github.com/badlogic/pi-skills .pi/skills/pi-skills
 
 ### Codex CLI
 
-Codex also supports recursive skill discovery:
-
 ```bash
 git clone https://github.com/badlogic/pi-skills ~/.codex/skills/pi-skills
+```
+
+### Amp
+
+Amp finds skills recursively in toolboxes:
+
+```bash
+git clone https://github.com/badlogic/pi-skills ~/.config/amp/tools/pi-skills
+```
+
+### Droid (Factory)
+
+```bash
+# User-level
+git clone https://github.com/badlogic/pi-skills ~/.factory/skills/pi-skills
+
+# Or project-level
+git clone https://github.com/badlogic/pi-skills .factory/skills/pi-skills
 ```
 
 ### Claude Code

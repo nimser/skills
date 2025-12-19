@@ -61,7 +61,6 @@ ln -s ~/pi-skills/browser-tools ~/.claude/skills/browser-tools
 ln -s ~/pi-skills/gccli ~/.claude/skills/gccli
 ln -s ~/pi-skills/gdcli ~/.claude/skills/gdcli
 ln -s ~/pi-skills/gmcli ~/.claude/skills/gmcli
-ln -s ~/pi-skills/subagent ~/.claude/skills/subagent
 ln -s ~/pi-skills/transcribe ~/.claude/skills/transcribe
 ln -s ~/pi-skills/vscode ~/.claude/skills/vscode
 ln -s ~/pi-skills/youtube-transcript ~/.claude/skills/youtube-transcript
@@ -73,7 +72,6 @@ ln -s ~/pi-skills/browser-tools .claude/skills/browser-tools
 ln -s ~/pi-skills/gccli .claude/skills/gccli
 ln -s ~/pi-skills/gdcli .claude/skills/gdcli
 ln -s ~/pi-skills/gmcli .claude/skills/gmcli
-ln -s ~/pi-skills/subagent .claude/skills/subagent
 ln -s ~/pi-skills/transcribe .claude/skills/transcribe
 ln -s ~/pi-skills/vscode .claude/skills/vscode
 ln -s ~/pi-skills/youtube-transcript .claude/skills/youtube-transcript
@@ -88,7 +86,6 @@ ln -s ~/pi-skills/youtube-transcript .claude/skills/youtube-transcript
 | [gccli](gccli/SKILL.md) | Google Calendar CLI for events and availability |
 | [gdcli](gdcli/SKILL.md) | Google Drive CLI for file management and sharing |
 | [gmcli](gmcli/SKILL.md) | Gmail CLI for email, drafts, and labels |
-| [subagent](subagent/SKILL.md) | Spawn sub-agents for parallel or background tasks |
 | [transcribe](transcribe/SKILL.md) | Speech-to-text transcription via Groq Whisper API |
 | [vscode](vscode/SKILL.md) | VS Code integration for diffs and file comparison |
 | [youtube-transcript](youtube-transcript/SKILL.md) | Fetch YouTube video transcripts |

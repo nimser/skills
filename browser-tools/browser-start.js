@@ -72,21 +72,21 @@ function getBrowserFlags(browserType) {
 	];
 	
 	if (process.platform === "linux") {
-		const linuxFlags = [
+		const commonLinuxFlags = [
 			"--disable-gpu",
 			"--disable-software-rasterizer",
 			"--disable-gpu-compositing",
 			"--disable-gpu-rasterization",
-			"--no-sandbox",
 			"--disable-dev-shm-usage",
 			"--disable-features=UseOzonePlatform,UseGLX,UseEGL",
 		];
 		
 		if (browserType === "brave") {
-			return [...baseFlags, ...linuxFlags];
+			return [...baseFlags, ...commonLinuxFlags];
 		}
 		
-		return [...baseFlags, ...linuxFlags];
+		// Chrome/Chromium needs --no-sandbox for containerized environments
+		return [...baseFlags, "--no-sandbox", ...commonLinuxFlags];
 	}
 	
 	return baseFlags;

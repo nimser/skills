@@ -2,10 +2,11 @@
 
 import { spawn, execSync } from "node:child_process";
 import puppeteer from "puppeteer-core";
+import { readFileSync } from "node:fs";
 
-const useProfile = process.argv[2] === "--profile";
+const useProfile = process.argv.includes("--profile");
 
-if (process.argv[2] && process.argv[2] !== "--profile") {
+if (process.argv.filter(a => a !== "--profile").length > 2) {
 	console.log("Usage: browser-start.js [--profile]");
 	console.log("\nOptions:");
 	console.log("  --profile  Copy your default Chrome profile (cookies, logins)");
@@ -14,6 +15,83 @@ if (process.argv[2] && process.argv[2] !== "--profile") {
 
 const SCRAPING_DIR = `${process.env.HOME}/.cache/browser-tools`;
 
+// Detect platform and set browser path
+function getBrowserPath() {
+	const platform = process.platform;
+	
+	if (platform === "darwin") {
+		const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+		try {
+			readFileSync(chromePath);
+			return { path: chromePath, type: "chrome" };
+		} catch {}
+	}
+	
+	if (platform === "linux") {
+		// Try nix-profile Brave first (user preference)
+		const bravePath = "/home/vscode/.nix-profile/bin/brave";
+		try {
+			readFileSync(bravePath);
+			return { path: bravePath, type: "brave" };
+		} catch {}
+		
+		// Try nix-profile Chrome
+		const chromePath = "/home/vscode/.nix-profile/bin/google-chrome-stable";
+		try {
+			readFileSync(chromePath);
+			return { path: chromePath, type: "chrome" };
+		} catch {}
+		
+		// Try system paths
+		const paths = [
+			{ path: "/usr/bin/brave-browser", type: "brave" },
+			{ path: "/usr/bin/brave", type: "brave" },
+			{ path: "/usr/bin/google-chrome-stable", type: "chrome" },
+			{ path: "/usr/bin/google-chrome", type: "chrome" },
+			{ path: "/usr/bin/chromium-browser", type: "chromium" },
+			{ path: "/usr/bin/chromium", type: "chromium" },
+		];
+		for (const { path, type } of paths) {
+			try {
+				readFileSync(path);
+				return { path, type };
+			} catch {}
+		}
+	}
+	
+	return null;
+}
+
+// Get browser startup flags based on platform and browser type
+function getBrowserFlags(browserType) {
+	const baseFlags = [
+		"--remote-debugging-port=9222",
+		`--user-data-dir=${SCRAPING_DIR}`,
+		"--no-first-run",
+		"--no-default-browser-check",
+	];
+	
+	if (process.platform === "linux") {
+		const linuxFlags = [
+			"--disable-gpu",
+			"--disable-software-rasterizer",
+			"--disable-gpu-compositing",
+			"--disable-gpu-rasterization",
+			"--no-sandbox",
+			"--disable-dev-shm-usage",
+			"--disable-features=UseOzonePlatform,UseGLX,UseEGL",
+		];
+		
+		if (browserType === "brave") {
+			return [...baseFlags, ...linuxFlags];
+		}
+		
+		return [...baseFlags, ...linuxFlags];
+	}
+	
+	return baseFlags;
+}
+
 // Check if already running on :9222
 try {
 	const browser = await puppeteer.connect({
@@ -21,7 +99,7 @@ try {
 		defaultViewport: null,
 	});
 	await browser.disconnect();
-	console.log("✓ Chrome already running on :9222");
+	console.log("✓ Browser already running on :9222");
 	process.exit(0);
 } catch {}
 
@@ -33,7 +111,7 @@ try {
 	execSync(`rm -f "${SCRAPING_DIR}/SingletonLock" "${SCRAPING_DIR}/SingletonSocket" "${SCRAPING_DIR}/SingletonCookie"`, { stdio: "ignore" });
 } catch {}
 
-if (useProfile) {
+if (useProfile && process.platform === "darwin") {
 	console.log("Syncing profile...");
 	execSync(
 		`rsync -a --delete \
@@ -50,19 +128,23 @@ if (useProfile) {
 	);
 }
 
-// Start Chrome with flags to force new instance
+const browserInfo = getBrowserPath();
+if (!browserInfo) {
+	console.error("✗ No browser found. Please install Brave or Chrome.");
+	process.exit(1);
+}
+
+const { path: browserPath, type: browserType } = browserInfo;
+console.log(`Starting ${browserType} (${process.platform})...`);
+
+// Start browser with flags to force new instance
 spawn(
-	"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-	[
-		"--remote-debugging-port=9222",
-		`--user-data-dir=${SCRAPING_DIR}`,
-		"--no-first-run",
-		"--no-default-browser-check",
-	],
+	browserPath,
+	getBrowserFlags(browserType),
 	{ detached: true, stdio: "ignore" },
 ).unref();
 
-// Wait for Chrome to be ready
+// Wait for browser to be ready
 let connected = false;
 for (let i = 0; i < 30; i++) {
 	try {
@@ -79,8 +161,8 @@ for (let i = 0; i < 30; i++) {
 }
 
 if (!connected) {
-	console.error("✗ Failed to connect to Chrome");
+	console.error(`✗ Failed to connect to ${browserType}`);
 	process.exit(1);
 }
 
-console.log(`✓ Chrome started on :9222${useProfile ? " with your profile" : ""}`);
+console.log(`✓ ${browserType} started on :9222${useProfile ? " with your profile" : ""}`);

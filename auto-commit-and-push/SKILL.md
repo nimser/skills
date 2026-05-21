@@ -46,9 +46,9 @@ Whenever you complete a significant task, update state, or modify files, you MUS
 To maintain transparency and allow GitHub to properly credit the AI's contribution, you MUST append a `Co-authored-by` trailer to the commit message:
 
 ```bash
-git add -A && git commit -m "chore: 🤖 automated agent update
+git add -A && git commit -m "chore: automated agent update
 
-Co-authored-by: Claude <noreply@anthropic.com>" && env SSH_AUTH_SOCK="" git push origin HEAD
+Co-authored-by: Claude <noreply@anthropic.com>" && git push
 ```
 ```
 

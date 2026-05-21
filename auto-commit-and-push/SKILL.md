@@ -1,6 +1,6 @@
 ---
 name: auto-commit-and-push
-description: Configures the workspace for non-interactive automated git commits and pushes, bypassing YubiKey/FIDO2 touch prompts for git push by using a dedicated GitHub Deploy Key while preserving signed commits.
+description: ALWAYS load this skill when any file under the current repo is changed. Configures the workspace for non-interactive automated git commits and pushes, bypassing YubiKey/FIDO2 touch prompts for git push by using a dedicated GitHub Deploy Key while preserving signed commits.
 ---
 
 # Auto Commit and Push Setup
@@ -49,6 +49,7 @@ Whenever you complete a significant task, update state, or modify files, you MUS
 - Strictly follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): description`, with an allowed type such as `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, or `revert`.
 - If a `commit-style*` skill is loaded, also follow its guidance for scope choice, expressive characters, and commit bodies.
 - If no `commit-style*` skill is loaded, keep messages strictly conventional and avoid extra expressive formatting.
+- ALWAYS include a `Co-authored-by: Claude <noreply@anthropic.com>` trailer in every commit.
 
 **Force Push Safety:**
 - NEVER use `git push --force`. Always use `--force-with-lease` to prevent overwriting others' work.
@@ -56,7 +57,7 @@ Whenever you complete a significant task, update state, or modify files, you MUS
 - If `--force-with-lease` fails (e.g., remote has diverged), do NOT fall back to `--force`. Instead, inform the user and ask them to manually run `git push --force` if they're sure.
 
 ```bash
-git add -A && git commit -m "type(scope): description" && env SSH_AUTH_SOCK="" git push
+git add -A && git commit -m "type(scope): description" -m "Co-authored-by: Claude <noreply@anthropic.com>" && env SSH_AUTH_SOCK="" git push
 ```
 ```
 

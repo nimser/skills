@@ -55,12 +55,8 @@ Whenever you complete a significant task, update state, or modify files, you MUS
 - ALWAYS ask for explicit user consent before force pushing. Explain why a force push is needed.
 - If `--force-with-lease` fails (e.g., remote has diverged), do NOT fall back to `--force`. Instead, inform the user and ask them to manually run `git push --force` if they're sure.
 
-To maintain transparency and allow GitHub to properly credit the AI's contribution, you MUST append a `Co-authored-by` trailer to the commit message:
-
 ```bash
-git add -A && git commit -m "type(scope): description
-
-Co-authored-by: Claude <noreply@anthropic.com>" && env SSH_AUTH_SOCK="" git push
+git add -A && git commit -m "type(scope): description" && env SSH_AUTH_SOCK="" git push
 ```
 ```
 

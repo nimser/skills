@@ -27,12 +27,8 @@ Whenever you complete a significant task, update state, or modify files, you MUS
 - If the `commit-style` skill is loaded, also follow its guidance for scope choice, expressive characters, and commit bodies.
 - If the `commit-style` skill is not loaded, keep messages strictly conventional and avoid extra expressive formatting.
 
-To maintain transparency and allow GitHub to properly credit the AI's contribution, you MUST append a `Co-authored-by` trailer to the commit message:
-
 ```bash
-git add -A && git commit -m "type(scope): description
-
-Co-authored-by: Claude <noreply@anthropic.com>"
+git add -A && git commit -m "type(scope): description"
 ```
 
 **Push Safety:**

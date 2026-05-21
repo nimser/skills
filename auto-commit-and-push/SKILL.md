@@ -51,6 +51,11 @@ Whenever you complete a significant task, update state, or modify files, you MUS
 - Choose icons that are contextually relevant to the change (e.g., 🌐 for browser, 🔧 for fixes, ⚙️ for config, 🤖 for agent features)
 - Use icons sparingly and only when they help reduce commit length or improve scannability
 
+**Force Push Safety:**
+- NEVER use `git push --force`. Always use `--force-with-lease` to prevent overwriting others' work.
+- ALWAYS ask for explicit user consent before force pushing. Explain why a force push is needed.
+- If `--force-with-lease` fails (e.g., remote has diverged), do NOT fall back to `--force`. Instead, inform the user and ask them to manually run `git push --force` if they're sure.
+
 To maintain transparency and allow GitHub to properly credit the AI's contribution, you MUST append a `Co-authored-by` trailer to the commit message:
 
 ```bash

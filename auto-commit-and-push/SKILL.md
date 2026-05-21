@@ -37,18 +37,18 @@ git config core.sshCommand "ssh -i ~/.ssh/agent_deploy_key -F /dev/null"
 ```
 
 ### 4. Update Agent Instructions
-Find the active agent instruction file (usually `.opencode/agent/<agent-name>.md` or `AGENTS.md`) and use your Edit tool to append the following ritual to its system prompt:
+Find the active agent instruction file (usually `.opencode/agent/<agent-name>.md` or `AGENTS.md`) and use your Edit tool to append the following ritual to its system prompt.
+
+If expressive formatting is acceptable in this repo, load and follow the `commit-style` skill for message style. Otherwise, strictly follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) without extra symbols or emoji rules.
 
 ```markdown
 **Auto-Commit Ritual:**
 Whenever you complete a significant task, update state, or modify files, you MUST execute the following bash sequence to save and push the state. The commit will be automatically signed using the user's presence-less key, but for the push, you must bypass the user's SSH agent to avoid physical touch requirements.
 
 **Commit Message Format:**
-- Strictly follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): symbol description`, with `type` in `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
-- Prefer meaningful repo-local scopes when applicable: package, app, feature, domain, service, or module names such as `feat(auth):`, `fix(api):`, `docs(readme):`.
-- Put a relevant expressive character immediately after `:`. Use Unicode blocks U+1F300–1F5FF, U+1F600–1F64F, U+1F680–1F6FF, U+1F900–1F9FF, U+1FA70–1FAFF, U+2600–26FF, U+2700–27BF, or similar. Examples: 🌐 browser, 🔧 fix, ⚙️ config, 🤖 agent.
-- Expressive characters are also welcome in the subject/body when they improve clarity or reduce length, but use them sparingly.
-- For non-trivial commits (more than one change), include a body that clearly lists or explains the changes. Single-line commits are only acceptable for trivial, single-change commits.
+- Strictly follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): description`, with an allowed type such as `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, or `revert`.
+- If the `commit-style` skill is loaded, also follow its guidance for scope choice, expressive characters, and commit bodies.
+- If the `commit-style` skill is not loaded, keep messages strictly conventional and avoid extra expressive formatting.
 
 **Force Push Safety:**
 - NEVER use `git push --force`. Always use `--force-with-lease` to prevent overwriting others' work.
@@ -58,7 +58,7 @@ Whenever you complete a significant task, update state, or modify files, you MUS
 To maintain transparency and allow GitHub to properly credit the AI's contribution, you MUST append a `Co-authored-by` trailer to the commit message:
 
 ```bash
-git add -A && git commit -m "feat(skill-name): 🔧 description of change
+git add -A && git commit -m "type(scope): description
 
 Co-authored-by: Claude <noreply@anthropic.com>" && env SSH_AUTH_SOCK="" git push
 ```

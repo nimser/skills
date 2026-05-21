@@ -1,6 +1,6 @@
 ---
 name: commit-style-classic
-description: Use when the agent needs a clean, professional commit-message style following Conventional Commits. No emoji, no expressive symbols, no playful tone. Suitable for conservative or corporate contexts where standard formatting is preferred.
+description: ALWAYS load this skill when the user asks to commit, stage, amend, or push changes. Provides a clean, professional commit-message style following Conventional Commits with no emoji, no expressive symbols, and no playful tone.
 ---
 
 # Commit Style (Classic)

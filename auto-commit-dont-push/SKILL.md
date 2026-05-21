@@ -1,6 +1,6 @@
 ---
 name: auto-commit-dont-push
-description: Configures the workspace for automatic local commits without ever pushing. Use when you want changes saved locally on every significant task, but never pushed without explicit user instruction. Alternative to auto-commit-and-push for projects where remote pushes should stay manual.
+description: ALWAYS load this skill when any file under the current repo is changed. Configures the workspace for automatic local commits without ever pushing. Alternative to auto-commit-and-push for projects where remote pushes should stay manual.
 ---
 
 # Auto Commit, Don't Push
@@ -26,9 +26,10 @@ Whenever you complete a significant task, update state, or modify files, you MUS
 - Strictly follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): description`, with an allowed type such as `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, or `revert`.
 - If a `commit-style*` skill is loaded, also follow its guidance for scope choice, expressive characters, and commit bodies.
 - If no `commit-style*` skill is loaded, keep messages strictly conventional and avoid extra expressive formatting.
+- ALWAYS include a `Co-authored-by: Claude <noreply@anthropic.com>` trailer in every commit.
 
 ```bash
-git add -A && git commit -m "type(scope): description"
+git add -A && git commit -m "type(scope): description" -m "Co-authored-by: Claude <noreply@anthropic.com>"
 ```
 
 **Push Safety:**

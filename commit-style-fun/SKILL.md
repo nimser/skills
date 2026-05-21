@@ -1,6 +1,6 @@
 ---
 name: commit-style-fun
-description: Use when the agent needs an opinionated commit-message style on top of Conventional Commits. Includes expressive Unicode character guidance, scoping conventions, and rules for commit bodies on non-trivial changes. Prefer this in personal/team contexts where expressive commit formatting is acceptable; skip it for strictly conventional or conservative peer contexts.
+description: ALWAYS load this skill when the user asks to commit, stage, amend, or push changes. Provides an opinionated commit-message style on top of Conventional Commits with expressive Unicode character guidance, scoping conventions, and rules for commit bodies on non-trivial changes.
 ---
 
 # Commit Style (Fun)

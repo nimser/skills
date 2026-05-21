@@ -19,6 +19,19 @@ The vibe: clear, concise, and professional. Commit messages should be readable a
 - [ ] Body if non-trivial
 - [ ] Co-author trailer: `Co-authored-by: Claude <noreply@anthropic.com>`
 
+## Co-author trailer
+
+Every commit must end with:
+
+```
+Co-authored-by: Claude <noreply@anthropic.com>
+```
+
+This signals that the commit was co-authored by an AI agent. It provides
+transparency about AI involvement, maintains attribution hygiene, and ensures
+the repo history distinguishes human-initiated changes from agent-generated
+ones. This is non-negotiable — even for single-line commits.
+
 ## Rules
 
 - Strictly follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): description`
@@ -29,7 +42,7 @@ The vibe: clear, concise, and professional. Commit messages should be readable a
 - For non-trivial commits (more than one change), include a body that clearly lists or explains the changes
 - Single-line commits are only acceptable for trivial, single-change commits
 
-## Examples
+## Example
 
 ```
 feat(auth): add OAuth callback route
@@ -37,41 +50,9 @@ feat(auth): add OAuth callback route
 - Add OAuth callback route
 - Persist provider tokens securely
 - Handle expired session refresh
+
+Co-authored-by: Claude <noreply@anthropic.com>
 ```
 
 ```
-fix(api): add idempotency key support
-
-- Add idempotency key support
-- Reject repeated transaction IDs within the retry window
-```
-
-```
-docs(readme): document required environment variables
-
-- Document required environment variables
-- Add troubleshooting steps for first-run failures
-```
-
-```
-refactor(core): extract validation into its own module
-
-- Extract validation into its own module
-- Drop unused legacy parsers
-- Simplify error propagation
-```
-
-```
-fix(ui): wire up the missing onClick handler
-
-- Wire up the missing onClick handler
-- Add loading spinner for better UX
-```
-
-```
-feat(search): add full-text search indexing
-
-- Index document content for full-text search
-- Add fuzzy matching for typo tolerance
-- Show result highlights
 ```

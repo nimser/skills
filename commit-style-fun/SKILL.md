@@ -19,6 +19,19 @@ The vibe: fun, light, and scannable. Commit messages should feel like a human wr
 - [ ] Body if non-trivial
 - [ ] Co-author trailer: `Co-authored-by: Claude <noreply@anthropic.com>`
 
+## Co-author trailer
+
+Every commit must end with:
+
+```
+Co-authored-by: Claude <noreply@anthropic.com>
+```
+
+This signals that the commit was co-authored by an AI agent. It provides
+transparency about AI involvement, maintains attribution hygiene, and ensures
+the repo history distinguishes human-initiated changes from agent-generated
+ones. This is non-negotiable — even for single-line commits.
+
 ## Rules
 
 - Strictly follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): description`
@@ -39,6 +52,8 @@ feat(auth): 🔒 let people in with the fancy login
 ✦ Add OAuth callback route
 ✦ Persist provider tokens securely
 ✦ Handle expired session refresh
+
+Co-authored-by: Claude <noreply@anthropic.com>
 ```
 
 ```
@@ -46,6 +61,8 @@ fix(api): 🧯 kick out the duplicate payment gremlins
 
 ✦ Add idempotency key support
 ✦ Reject repeated transaction IDs within the retry window
+
+Co-authored-by: Claude <noreply@anthropic.com>
 ```
 
 ```
@@ -53,6 +70,8 @@ docs(readme): 📝 unfumble the setup guide so future-me doesn't cry
 
 ✦ Document required environment variables
 ✦ Add troubleshooting steps for first-run failures
+
+Co-authored-by: Claude <noreply@anthropic.com>
 ```
 
 ```
@@ -61,6 +80,8 @@ refactor(core): 🧹 yeet the legacy config mess
 ✦ Extract validation into its own module
 ✦ Drop unused legacy parsers
 ✦ Simplify error propagation
+
+Co-authored-by: Claude <noreply@anthropic.com>
 ```
 
 ```
@@ -68,6 +89,8 @@ fix(ui): 🩹 patch the button that does nothing when clicked
 
 ✦ Wire up the missing onClick handler
 ✦ Add loading spinner so users stop rage-clicking
+
+Co-authored-by: Claude <noreply@anthropic.com>
 ```
 
 ```
@@ -76,4 +99,6 @@ feat(search): 🔍 make search actually find things
 ✦ Index document content for full-text search
 ✦ Add fuzzy matching for typo tolerance
 ✦ Show result highlights so eyes don't bleed
+
+Co-authored-by: Claude <noreply@anthropic.com>
 ```

@@ -50,7 +50,7 @@ Whenever you complete a significant task, update state, or modify files, you MUS
 - After the colon, include a relevant icon from Unicode blocks U+1F300–1F5FF, U+1F600–1F64F, U+1F680–1F6FF, U+1F900–1F9FF, U+1FA70–1FAFF, U+2600–26FF, U+2700–27BF, or similar expressive characters
 - Choose icons that are contextually relevant to the change (e.g., 🌐 for browser, 🔧 for fixes, ⚙️ for config, 🤖 for agent features)
 - Use icons sparingly and only when they help reduce commit length or improve scannability
-- Symbols (→, •, ✦, ★, ▲, ▼, etc.) are welcome in descriptions to improve clarity or reduce length
+- Expressive characters from Unicode blocks U+1F300–1F5FF, U+1F600–1F64F, U+1F680–1F6FF, U+1F900–1F9FF, U+1FA70–1FAFF, U+2600–26FF, U+2700–27BF are welcome anywhere in the message (subject or body) to improve clarity or reduce length, but use sparingly
 - For non-trivial changes (more than one change), a commit body is REQUIRED. List each change as a bullet point or describe the changes clearly. Single-line commits are only acceptable for trivial, single-change commits.
 
 **Force Push Safety:**

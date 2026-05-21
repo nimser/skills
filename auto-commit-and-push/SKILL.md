@@ -47,9 +47,8 @@ Whenever you complete a significant task, update state, or modify files, you MUS
 
 **Commit Message Format:**
 - Strictly follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): description`, with an allowed type such as `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, or `revert`.
-- If the `commit-style` skill is loaded, also follow its guidance for scope choice, expressive characters, and commit bodies.
-- If the `commit-style` skill is not loaded, keep messages strictly conventional and avoid extra expressive formatting.
-- ALWAYS append a `Co-authored-by` trailer: `Co-authored-by: Claude <noreply@anthropic.com>`
+- If a `commit-style*` skill is loaded, also follow its guidance for scope choice, expressive characters, and commit bodies.
+- If no `commit-style*` skill is loaded, keep messages strictly conventional and avoid extra expressive formatting.
 
 **Force Push Safety:**
 - NEVER use `git push --force`. Always use `--force-with-lease` to prevent overwriting others' work.

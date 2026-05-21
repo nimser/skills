@@ -1,6 +1,6 @@
 ---
 name: auto-commit-and-push
-description: ALWAYS load this skill when any file under the current repo is changed. Configures the workspace for non-interactive automated git commits and pushes, bypassing YubiKey/FIDO2 touch prompts for git push by using a dedicated GitHub Deploy Key while preserving signed commits.
+description: ALWAYS load this skill when you complete a significant task, update state, or modify files under the current repo. Configures the workspace for non-interactive automated git commits and pushes, bypassing YubiKey/FIDO2 touch prompts for git push by using a dedicated GitHub Deploy Key while preserving signed commits.
 ---
 
 # Auto Commit and Push Setup
@@ -14,7 +14,9 @@ This workflow allows local commits to remain cryptographically signed by the use
 When invoked, execute the following steps in order using your Bash tool:
 
 ### 1. Ensure Agent Deploy Key Exists
+
 Check if the global agent deploy key exists. If not, generate it:
+
 ```bash
 if [ ! -f ~/.ssh/agent_deploy_key ]; then
   ssh-keygen -t ed25519 -f ~/.ssh/agent_deploy_key -N "" -C "opencode-agent-deploy-key"
@@ -25,40 +27,34 @@ fi
 ```
 
 ### 2. Add Deploy Key to GitHub
+
 Use the GitHub CLI (`gh`) to add the public key to the current repository as a Deploy Key with write access. (It's safe if it fails because it already exists).
+
 ```bash
 gh repo deploy-key add ~/.ssh/agent_deploy_key.pub --allow-write --title "opencode Agent Deploy Key" || true
 ```
 
 ### 3. Configure Local Git Repository
+
 Force the local repository to use the deploy key for SSH transport, bypassing the global config:
+
 ```bash
 git config core.sshCommand "ssh -i ~/.ssh/agent_deploy_key -F /dev/null"
 ```
 
-### 4. Update Agent Instructions
-Find the active agent instruction file (usually `.opencode/agent/<agent-name>.md` or `AGENTS.md`) and use your Edit tool to append the following ritual to its system prompt.
-
-If expressive formatting is acceptable in this repo, load and follow the `commit-style` skill for message style. Otherwise, strictly follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) without extra symbols or emoji rules.
-
-```markdown
-**Auto-Commit Ritual:**
-Whenever you complete a significant task, update state, or modify files, you MUST execute the following bash sequence to save and push the state. The commit will be automatically signed using the user's presence-less key, but for the push, you must bypass the user's SSH agent to avoid physical touch requirements.
-
-**Commit Message Format:**
-- Strictly follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): description`, with an allowed type such as `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, or `revert`.
-- If a `commit-style*` skill is loaded, also follow its guidance for scope choice, expressive characters, and commit bodies.
-- If no `commit-style*` skill is loaded, keep messages strictly conventional and avoid extra expressive formatting.
-- ALWAYS include a `Co-authored-by: Claude <noreply@anthropic.com>` trailer in every commit.
+### 4. Perform the following commit ritual
 
 **Force Push Safety:**
+
 - NEVER use `git push --force`. Always use `--force-with-lease` to prevent overwriting others' work.
 - ALWAYS ask for explicit user consent before force pushing. Explain why a force push is needed.
 - If `--force-with-lease` fails (e.g., remote has diverged), do NOT fall back to `--force`. Instead, inform the user and ask them to manually run `git push --force` if they're sure.
 
-```bash
-git add -A && git commit -m "type(scope): description" -m "Co-authored-by: Claude <noreply@anthropic.com>" && env SSH_AUTH_SOCK="" git push
-```
-```
+**Auto-Commit Ritual:**
 
-Inform the user once the configuration is complete and the instructions are updated!
+Whenever you complete a significant task, update state, or modify files, you MUST execute the following sequence of tasks in order to save and push the state with a suitable commit message. The commit will be automatically signed using the user's presence-less key, but for the push, you must bypass the user's SSH agent to avoid physical touch requirements.
+
+Tasks sequence:
+
+1. [ ] IMPORTANT: To get the proper `<compliant message>` commit message, load and strictly follow the instructions from the `commit-style-fun`, `commit-style-default`, or any available `commit-style*` skill for message style.
+2. [ ] run `git add -A && git commit -m "<compliant message>" && env SSH_AUTH_SOCK="" git push` replacing the message based on previous step. If push fails, follow the "Force Push Safety" guidelines above

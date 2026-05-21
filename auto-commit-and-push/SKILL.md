@@ -45,7 +45,7 @@ Whenever you complete a significant task, update state, or modify files, you MUS
 
 **Commit Message Format:**
 - Strictly follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): symbol description`, with `type` in `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
-- Prefer skill names as scopes when applicable: `feat(browser-tools):`, `fix(brave-search):`.
+- Prefer meaningful repo-local scopes when applicable: package, app, feature, domain, service, or module names such as `feat(auth):`, `fix(api):`, `docs(readme):`.
 - Put a relevant expressive character immediately after `:`. Use Unicode blocks U+1F300–1F5FF, U+1F600–1F64F, U+1F680–1F6FF, U+1F900–1F9FF, U+1FA70–1FAFF, U+2600–26FF, U+2700–27BF, or similar. Examples: 🌐 browser, 🔧 fix, ⚙️ config, 🤖 agent.
 - Expressive characters are also welcome in the subject/body when they improve clarity or reduce length, but use them sparingly.
 - For non-trivial commits (more than one change), include a body that clearly lists or explains the changes. Single-line commits are only acceptable for trivial, single-change commits.

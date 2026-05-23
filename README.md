@@ -12,39 +12,45 @@ A growing collection of skills for coding agents — compatible with [opencode](
 
 These skills are opinionated workflow helpers. They're small, composable, and designed to be hacked on. Take what works, toss what doesn't, make them yours.
 
-## Available Skills
+## Skills
 
-### Git & Commit Workflows
+```
+skills/
+├── .agents/skills/                  # opencode auto-discovered skills
+│   ├── auto-commit-and-push/       # touchless git push via deploy key
+│   ├── brave-search/               # web search via Brave API
+│   ├── browser-tools/              # Chrome DevTools Protocol automation
+│   └── commit-style-fun/           # playful Conventional Commits style
+├── auto-commit-and-push/           # (root copy)
+├── auto-commit-dont-push/          # local-only auto-commit
+├── brave-search/                   # (root copy)
+├── browser-tools/                  # (root copy)
+├── commit-style-classic/           # no-frills Conventional Commits
+├── commit-style-fun/               # (root copy)
+├── gccli/                          # Google Calendar CLI
+├── gdcli/                          # Google Drive CLI
+├── gmcli/                          # Gmail CLI
+├── transcribe/                     # speech-to-text via Groq Whisper
+├── vscode/                         # VS Code diffs & file comparison
+└── youtube-transcript/             # YouTube transcript fetcher
+```
 
-| Skill | Description |
-|-------|-------------|
-| [auto-commit-and-push](.agents/skills/auto-commit-and-push/SKILL.md) | Non-interactive git commits and pushes using a deploy key, bypassing YubiKey/FIDO2 touch prompts |
-| [auto-commit-dont-push](auto-commit-dont-push/SKILL.md) | Auto-commit without pushing — for when you want local-only saves |
-| [commit-style-fun](.agents/skills/commit-style-fun/SKILL.md) | Opinionated Conventional Commits style with expressive Unicode characters and playful tone |
-| [commit-style-classic](commit-style-classic/SKILL.md) | Classic Conventional Commits style — no frills |
+## Init Architecture
 
-### Web & Browser
+Each skill directory can contain an `init.sh` script that bootstraps the
+skill's environment — generating keys, registering deploy keys on GitHub,
+configuring git, installing deps, etc.
 
-| Skill | Description |
-|-------|-------------|
-| [brave-search](.agents/skills/brave-search/SKILL.md) | Web search and content extraction via Brave Search API — lightweight, no browser required |
-| [browser-tools](.agents/skills/browser-tools/SKILL.md) | Interactive browser automation via Chrome DevTools Protocol |
-| [youtube-transcript](youtube-transcript/SKILL.md) | Fetch YouTube video transcripts |
+```
+some-skill/
+├── SKILL.md          # instructions loaded by the agent
+├── init.sh           # one-shot setup script (idempotent)
+└── ...               # helper scripts, configs, etc.
+```
 
-### Google Workspace
-
-| Skill | Description |
-|-------|-------------|
-| [gccli](gccli/SKILL.md) | Google Calendar CLI for events and availability |
-| [gdcli](gdcli/SKILL.md) | Google Drive CLI for file management and sharing |
-| [gmcli](gmcli/SKILL.md) | Gmail CLI for email, drafts, and labels |
-
-### Utilities
-
-| Skill | Description |
-|-------|-------------|
-| [transcribe](transcribe/SKILL.md) | Speech-to-text transcription via Groq Whisper API |
-| [vscode](vscode/SKILL.md) | VS Code integration for diffs and file comparison |
+`init.sh` scripts can be automatically executed at agent startup time via a
+wrapper script or via agent plugins (e.g. an opencode plugin), so the agent
+arrives in a ready-to-work state without manual intervention.
 
 ## Installation
 

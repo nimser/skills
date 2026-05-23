@@ -6,98 +6,94 @@
 >
 > *Standard upgrade paths MIGHT be compromised!*
 
-# pi-skills
+# skills
 
-A collection of skills for [pi-coding-agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent), compatible with Claude Code, Codex CLI, Amp, and Droid.
+A growing collection of skills for coding agents — compatible with [opencode](https://opencode.ai), Claude Code, Codex CLI, and others.
+
+These skills are opinionated workflow helpers. They're small, composable, and designed to be hacked on. Take what works, toss what doesn't, make them yours.
+
+## Available Skills
+
+### Git & Commit Workflows
+
+| Skill | Description |
+|-------|-------------|
+| [auto-commit-and-push](.agents/skills/auto-commit-and-push/SKILL.md) | Non-interactive git commits and pushes using a deploy key, bypassing YubiKey/FIDO2 touch prompts |
+| [auto-commit-dont-push](auto-commit-dont-push/SKILL.md) | Auto-commit without pushing — for when you want local-only saves |
+| [commit-style-fun](.agents/skills/commit-style-fun/SKILL.md) | Opinionated Conventional Commits style with expressive Unicode characters and playful tone |
+| [commit-style-classic](commit-style-classic/SKILL.md) | Classic Conventional Commits style — no frills |
+
+### Web & Browser
+
+| Skill | Description |
+|-------|-------------|
+| [brave-search](.agents/skills/brave-search/SKILL.md) | Web search and content extraction via Brave Search API — lightweight, no browser required |
+| [browser-tools](.agents/skills/browser-tools/SKILL.md) | Interactive browser automation via Chrome DevTools Protocol |
+| [youtube-transcript](youtube-transcript/SKILL.md) | Fetch YouTube video transcripts |
+
+### Google Workspace
+
+| Skill | Description |
+|-------|-------------|
+| [gccli](gccli/SKILL.md) | Google Calendar CLI for events and availability |
+| [gdcli](gdcli/SKILL.md) | Google Drive CLI for file management and sharing |
+| [gmcli](gmcli/SKILL.md) | Gmail CLI for email, drafts, and labels |
+
+### Utilities
+
+| Skill | Description |
+|-------|-------------|
+| [transcribe](transcribe/SKILL.md) | Speech-to-text transcription via Groq Whisper API |
+| [vscode](vscode/SKILL.md) | VS Code integration for diffs and file comparison |
 
 ## Installation
 
-### pi-coding-agent
+### opencode
+
+Skills in `.agents/skills/` are automatically discovered. For root-level skills, symlink them:
 
 ```bash
-# User-level (available in all projects)
-git clone https://github.com/badlogic/pi-skills ~/.pi/agent/skills/pi-skills
+ln -s /path/to/repo/gccli ~/.opencode/skills/gccli
+```
 
-# Or project-level
-git clone https://github.com/badlogic/pi-skills .pi/skills/pi-skills
+### Claude Code
+
+Claude Code looks one level deep for `SKILL.md` files. Clone the repo, then symlink individual skills:
+
+```bash
+git clone https://github.com/nimser/skills ~/skills
+
+mkdir -p ~/.claude/skills
+ln -s ~/skills/brave-search ~/.claude/skills/brave-search
+ln -s ~/skills/browser-tools ~/.claude/skills/browser-tools
+# ... add whichever skills you want
 ```
 
 ### Codex CLI
 
 ```bash
-git clone https://github.com/badlogic/pi-skills ~/.codex/skills/pi-skills
+git clone https://github.com/nimser/skills ~/.codex/skills/skills
 ```
 
-### Amp
+## Requirements
 
-Amp finds skills recursively in toolboxes:
+Some skills need extra setup. The agent will usually walk you through it, but:
 
-```bash
-git clone https://github.com/badlogic/pi-skills ~/.config/amp/tools/pi-skills
-```
-
-### Droid (Factory)
-
-```bash
-# User-level
-git clone https://github.com/badlogic/pi-skills ~/.factory/skills/pi-skills
-
-# Or project-level
-git clone https://github.com/badlogic/pi-skills .factory/skills/pi-skills
-```
-
-### Claude Code
-
-Claude Code only looks one level deep for `SKILL.md` files, so each skill folder must be directly under the skills directory. Clone the repo somewhere, then symlink individual skills:
-
-```bash
-# Clone to a convenient location
-git clone https://github.com/badlogic/pi-skills ~/pi-skills
-
-# Symlink individual skills (user-level)
-mkdir -p ~/.claude/skills
-ln -s ~/pi-skills/brave-search ~/.claude/skills/brave-search
-ln -s ~/pi-skills/browser-tools ~/.claude/skills/browser-tools
-ln -s ~/pi-skills/gccli ~/.claude/skills/gccli
-ln -s ~/pi-skills/gdcli ~/.claude/skills/gdcli
-ln -s ~/pi-skills/gmcli ~/.claude/skills/gmcli
-ln -s ~/pi-skills/transcribe ~/.claude/skills/transcribe
-ln -s ~/pi-skills/vscode ~/.claude/skills/vscode
-ln -s ~/pi-skills/youtube-transcript ~/.claude/skills/youtube-transcript
-
-# Or project-level
-mkdir -p .claude/skills
-ln -s ~/pi-skills/brave-search .claude/skills/brave-search
-ln -s ~/pi-skills/browser-tools .claude/skills/browser-tools
-ln -s ~/pi-skills/gccli .claude/skills/gccli
-ln -s ~/pi-skills/gdcli .claude/skills/gdcli
-ln -s ~/pi-skills/gmcli .claude/skills/gmcli
-ln -s ~/pi-skills/transcribe .claude/skills/transcribe
-ln -s ~/pi-skills/vscode .claude/skills/vscode
-ln -s ~/pi-skills/youtube-transcript .claude/skills/youtube-transcript
-```
-
-## Available Skills
-
-| Skill | Description |
-|-------|-------------|
-| [brave-search](brave-search/SKILL.md) | Web search and content extraction via Brave Search |
-| [browser-tools](browser-tools/SKILL.md) | Interactive browser automation via Chrome DevTools Protocol |
-| [gccli](gccli/SKILL.md) | Google Calendar CLI for events and availability |
-| [gdcli](gdcli/SKILL.md) | Google Drive CLI for file management and sharing |
-| [gmcli](gmcli/SKILL.md) | Gmail CLI for email, drafts, and labels |
-| [transcribe](transcribe/SKILL.md) | Speech-to-text transcription via Groq Whisper API |
-| [vscode](vscode/SKILL.md) | VS Code integration for diffs and file comparison |
-| [youtube-transcript](youtube-transcript/SKILL.md) | Fetch YouTube video transcripts |
+- **brave-search** — Node.js. Run `npm install` in the skill directory. Requires a free Brave Search API key.
+- **browser-tools** — Chrome and Node.js. Run `npm install` in the skill directory.
+- **gccli / gdcli / gmcli** — Node.js. Install globally with `npm install -g @mariozechner/gccli` (etc.).
+- **transcribe** — `curl` and a Groq API key.
+- **vscode** — VS Code with `code` CLI in PATH.
+- **youtube-transcript** — Node.js. Run `npm install` in the skill directory.
 
 ## Skill Format
 
-Each skill follows the pi/Claude Code format:
+Each skill is a directory containing a `SKILL.md` with frontmatter:
 
 ```markdown
 ---
 name: skill-name
-description: Short description shown to agent
+description: Short description shown to the agent
 ---
 
 # Instructions
@@ -108,19 +104,12 @@ Helper files available at: {baseDir}/
 
 The `{baseDir}` placeholder is replaced with the skill's directory path at runtime.
 
-## Requirements
+## Acknowledgements
 
-Some skills require additional setup. Generally, the agent will walk you through that. But if not, here you go:
+Inspired by and drawing from:
 
-- **brave-search**: Requires Node.js. Run `npm install` in the skill directory.
-- **browser-tools**: Requires Chrome and Node.js. Run `npm install` in the skill directory.
-- **gccli**: Requires Node.js. Install globally with `npm install -g @mariozechner/gccli`.
-- **gdcli**: Requires Node.js. Install globally with `npm install -g @mariozechner/gdcli`.
-- **gmcli**: Requires Node.js. Install globally with `npm install -g @mariozechner/gmcli`.
-- **subagent**: Requires pi-coding-agent. Install globally with `npm install -g @mariozechner/pi-coding-agent`.
-- **transcribe**: Requires curl and a Groq API key.
-- **vscode**: Requires VS Code with `code` CLI in PATH.
-- **youtube-transcript**: Requires Node.js. Run `npm install` in the skill directory.
+- [mattpocock/skills](https://github.com/mattpocock/skills) — Skills for real engineers. Excellent collection of productivity and engineering workflow skills.
+- [badlogic/pi-skills](https://github.com/badlogic/pi-skills) — Original skill collection for pi-coding-agent. Many of the utility skills (brave-search, browser-tools, google CLIs, etc.) originated here.
 
 ## License
 

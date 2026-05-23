@@ -70,17 +70,6 @@ ln -s ~/skills/browser-tools .agents/skills/browser-tools
 # ...
 ```
 
-## Requirements
-
-Some skills need extra setup. The agent will usually walk you through it, but:
-
-- **brave-search** — Node.js. Run `npm install` in the skill directory. Requires a free Brave Search API key.
-- **browser-tools** — Chrome and Node.js. Run `npm install` in the skill directory.
-- **gccli / gdcli / gmcli** — Node.js. Install globally with `npm install -g @mariozechner/gccli` (etc.).
-- **transcribe** — `curl` and a Groq API key.
-- **vscode** — VS Code with `code` CLI in PATH.
-- **youtube-transcript** — Node.js. Run `npm install` in the skill directory.
-
 ## Skill Format
 
 Each skill is a directory containing a `SKILL.md` with frontmatter:

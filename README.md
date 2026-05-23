@@ -8,31 +8,32 @@
 
 # skills
 
-A growing collection of skills for coding agents — compatible with [opencode](https://opencode.ai), Claude Code, Codex CLI, and others.
+A growing collection of skills for coding agents — compatible with [opencode](https://opencode.ai) and Claude Code.
 
 These skills are opinionated workflow helpers. They're small, composable, and designed to be hacked on. Take what works, toss what doesn't, make them yours.
 
 ## Skills
 
 ```
-skills/
-├── .agents/skills/                  # opencode auto-discovered skills
-│   ├── auto-commit-and-push/       # touchless git push via deploy key
-│   ├── brave-search/               # web search via Brave API
-│   ├── browser-tools/              # Chrome DevTools Protocol automation
-│   └── commit-style-fun/           # playful Conventional Commits style
-├── auto-commit-and-push/           # (root copy)
-├── auto-commit-dont-push/          # local-only auto-commit
-├── brave-search/                   # (root copy)
-├── browser-tools/                  # (root copy)
-├── commit-style-classic/           # no-frills Conventional Commits
-├── commit-style-fun/               # (root copy)
-├── gccli/                          # Google Calendar CLI
-├── gdcli/                          # Google Drive CLI
-├── gmcli/                          # Gmail CLI
-├── transcribe/                     # speech-to-text via Groq Whisper
-├── vscode/                         # VS Code diffs & file comparison
-└── youtube-transcript/             # YouTube transcript fetcher
+Git & Commit Workflows
+├── auto-commit-and-push            # touchless git push via deploy key
+├── auto-commit-dont-push           # local-only auto-commit
+├── commit-style-fun                 # playful Conventional Commits style
+└── commit-style-classic             # no-frills Conventional Commits
+
+Web & Browser
+├── brave-search                    # web search via Brave API
+├── browser-tools                   # Chrome DevTools Protocol automation
+└── youtube-transcript              # YouTube transcript fetcher
+
+Google Workspace
+├── gccli                           # Google Calendar CLI
+├── gdcli                           # Google Drive CLI
+└── gmcli                           # Gmail CLI
+
+Utilities
+├── transcribe                      # speech-to-text via Groq Whisper
+└── vscode                          # VS Code diffs & file comparison
 ```
 
 ## Init Architecture
@@ -54,31 +55,19 @@ arrives in a ready-to-work state without manual intervention.
 
 ## Installation
 
-### opencode
+Both opencode and Claude Code discover skills from `.agents/skills/`.
 
-Skills in `.agents/skills/` are automatically discovered. For root-level skills, symlink them:
-
-```bash
-ln -s /path/to/repo/gccli ~/.opencode/skills/gccli
-```
-
-### Claude Code
-
-Claude Code looks one level deep for `SKILL.md` files. Clone the repo, then symlink individual skills:
+To preserve context window, avoid installing skills globally. Instead, clone
+this repo once and symlink the skills you need into each project:
 
 ```bash
 git clone https://github.com/nimser/skills ~/skills
 
-mkdir -p ~/.claude/skills
-ln -s ~/skills/brave-search ~/.claude/skills/brave-search
-ln -s ~/skills/browser-tools ~/.claude/skills/browser-tools
-# ... add whichever skills you want
-```
-
-### Codex CLI
-
-```bash
-git clone https://github.com/nimser/skills ~/.codex/skills/skills
+# per project
+cd your-project
+ln -s ~/skills/brave-search .agents/skills/brave-search
+ln -s ~/skills/browser-tools .agents/skills/browser-tools
+# ...
 ```
 
 ## Requirements

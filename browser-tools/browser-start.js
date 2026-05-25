@@ -81,11 +81,6 @@ function getBrowserFlags(browserType) {
 			"--disable-features=UseOzonePlatform,UseGLX,UseEGL",
 		];
 		
-		if (browserType === "brave") {
-			return [...baseFlags, ...commonLinuxFlags];
-		}
-		
-		// Chrome/Chromium needs --no-sandbox for containerized environments
 		return [...baseFlags, "--no-sandbox", ...commonLinuxFlags];
 	}
 	

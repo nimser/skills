@@ -11,38 +11,9 @@ This workflow allows local commits to remain cryptographically signed by the use
 
 ## Execution Steps
 
-When invoked, execute the following steps in order using your Bash tool:
+**Try first, set up only on failure.** Assume `init.sh` has already configured the deploy key, GitHub deploy-key registration, and `core.sshCommand`. Skip straight to committing and pushing. Only run setup if something breaks.
 
-### 1. Ensure Agent Deploy Key Exists
-
-Check if the global agent deploy key exists. If not, generate it:
-
-```bash
-if [ ! -f ~/.ssh/agent_deploy_key ]; then
-  ssh-keygen -t ed25519 -f ~/.ssh/agent_deploy_key -N "" -C "opencode-agent-deploy-key"
-  echo "Key generated."
-else
-  echo "Key already exists."
-fi
-```
-
-### 2. Add Deploy Key to GitHub
-
-Use the GitHub CLI (`gh`) to add the public key to the current repository as a Deploy Key with write access. (It's safe if it fails because it already exists).
-
-```bash
-gh repo deploy-key add ~/.ssh/agent_deploy_key.pub --allow-write --title "opencode Agent Deploy Key" || true
-```
-
-### 3. Configure Local Git Repository
-
-Force the local repository to use the deploy key for SSH transport, bypassing the global config:
-
-```bash
-git config core.sshCommand "ssh -i ~/.ssh/agent_deploy_key -F /dev/null"
-```
-
-### 4. Perform the following commit ritual
+### 1. Stage, commit, and push (happy path)
 
 **Force Push Safety:**
 
@@ -50,11 +21,24 @@ git config core.sshCommand "ssh -i ~/.ssh/agent_deploy_key -F /dev/null"
 - ALWAYS ask for explicit user consent before force pushing. Explain why a force push is needed.
 - If `--force-with-lease` fails (e.g., remote has diverged), do NOT fall back to `--force`. Instead, inform the user and ask them to manually run `git push --force` if they're sure.
 
-**Auto-Commit Ritual:**
+**Commit message style:** Load and strictly follow the `commit-style-fun`, `commit-style-default`, or any available `commit-style*` skill for message style.
 
-Whenever you complete a significant task, update state, or modify files, you MUST execute the following sequence of tasks in order to save and push the state with a suitable commit message. The commit will be automatically signed using the user's presence-less key, but for the push, you must bypass the user's SSH agent to avoid physical touch requirements.
+**Commit and push:** Stage all changes, then commit and push in one command. To avoid shell-quoting issues with multi-line messages, Unicode bullets (✦), apostrophes, or any special characters, **always** pass the commit message via a heredoc — never use `-m`:
 
-Tasks sequence:
+```bash
+git add -A && git commit -F - <<'EOF' && env SSH_AUTH_SOCK="" git push
+<type>(<scope>): <emoji> <description>
 
-1. [ ] IMPORTANT: To get the proper `<compliant message>` commit message, load and strictly follow the instructions from the `commit-style-fun`, `commit-style-default`, or any available `commit-style*` skill for message style.
-2. [ ] run `git add -A && git commit -m "<compliant message>" && env SSH_AUTH_SOCK="" git push` replacing the message based on previous step. If push fails, follow the "Force Push Safety" guidelines above
+✦ <bullet 1>
+✦ <bullet 2>
+
+Co-authored-by: Claude <noreply@anthropic.com>
+EOF
+```
+
+> **Why heredoc, not `-m`?** The `-m` flag requires the entire message inside shell quotes. Multi-line messages with ✦ bullets, em-dashes (—), curly quotes (''), apostrophes, or other Unicode regularly break single-quote or double-quote wrapping. A heredoc with a quoted delimiter (`<<'EOF'`) passes the body completely literally — no expansion, no quoting conflicts — and works for any valid commit message.
+
+### 2. Handle failures (only if step 1 fails)
+
+- **SSH / auth error** (e.g., `Permission denied`, `publickey`, `Host key verification failed`): re-run `init.sh`, then retry step 1 **once**. If it still fails, inform the user.
+- **Non-auth error** (e.g., diverged remote): follow the "Force Push Safety" guidelines above.

@@ -2,9 +2,39 @@
 # code-style/init.sh — bootstrap OXC + dprint + strict tsconfig for a TypeScript project
 # Interactive for existing projects (prompts before merge), non-interactive for fresh ones.
 # Requires: Bash 4.4+, jq, git (optional but recommended)
-# Usage: bash init.sh [target-dir]
+# Usage: bash init.sh [target-dir] [-y|--yes]
 set -euo pipefail
-cd "${1:-.}"
+
+# ── argument parsing ────────────────────────────────────────
+TARGET_DIR="."
+AUTO_YES=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -y|--yes)
+      AUTO_YES=true
+      shift
+      ;;
+    *)
+      TARGET_DIR="$1"
+      shift
+      ;;
+  esac
+done
+
+cd "$TARGET_DIR"
+
+# ── auto-detect -y based on git remote ────────────────────
+if [[ "$AUTO_YES" == false && -d .git ]] && command -v git &>/dev/null; then
+  REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+  if [[ "$REMOTE_URL" =~ github\.com/nimser/ || "$REMOTE_URL" =~ gitlab\.com/nimser/ ]]; then
+    AUTO_YES=true
+    info "auto-enabled -y mode (nimser/* remote detected)"
+  fi
+elif [[ "$AUTO_YES" == false && ! -d .git ]]; then
+  AUTO_YES=true
+  info "auto-enabled -y mode (no git repo)"
+fi
 
 # ── empty-array-safe iteration ──────────────────────────────
 # Bash 4.3 and earlier crash on "${arr[@]}" with nounset when arr is empty.
@@ -30,6 +60,105 @@ declare -a CONFIGS_CREATED=() CONFIGS_MERGED=() CONFIGS_SKIPPED=() CONFIGS_RENAM
 declare -a SCRIPTS_ADDED=()   SCRIPTS_PRESERVED=()
 declare -a DEPS_INSTALLED=()  DEPS_PRESENT=()
 declare -a GITIGNORE_ADDED=() GITIGNORE_PRESENT=()
+declare -a TOOLS_REMOVED=()   TOOLS_WARNED=()
+declare -a COMMIT_FILES=()
+
+# ── early checks for existing project ────────────────────
+SKIP_OXC=false
+OXC_MODE=""
+
+# Check if this is an existing project
+if [[ -f package.json || -f .oxlintrc.json || -f .oxfmtrc.json || \
+      -f .prettierrc || -f .prettierrc.json || -f .prettierrc.yml || \
+      -f .prettierrc.yaml || -f .prettierrc.js || -f .prettierrc.cjs || \
+      -f prettier.config.js || -f prettier.config.cjs ]]; then
+  echo ""
+  echo "  Existing project detected."
+  if [[ "$AUTO_YES" == false ]]; then
+    read -rp "  Set up code-style tooling? [Y/n] " -n 1 -r || true
+    echo ""
+    if [[ $REPLY == [Nn] ]]; then
+      info "skipping setup (user declined)"
+      exit 0
+    fi
+  else
+    echo "  Set up code-style tooling? [Y/n] Y (auto)"
+  fi
+fi
+
+# Check for prettier config
+PRETTIER_CONFIGS=(.prettierrc .prettierrc.json .prettierrc.yml .prettierrc.yaml .prettierrc.js .prettierrc.cjs prettier.config.js prettier.config.cjs)
+PRETTIER_FOUND=false
+for config in "${PRETTIER_CONFIGS[@]}"; do
+  if [[ -f "$config" ]]; then
+    PRETTIER_FOUND=true
+    break
+  fi
+done
+
+if [[ $PRETTIER_FOUND == true ]]; then
+  echo ""
+  echo "  Found prettier configuration."
+  MIGRATE_PREPL="Y"
+  if [[ "$AUTO_YES" == false ]]; then
+    read -rp "  Migrate to oxc (oxfmt)? [Y/n] " -n 1 -r || true
+    MIGRATE_PREPL="$REPLY"
+  fi
+  echo ""
+  if [[ "$MIGRATE_PREPL" != [Nn] ]]; then
+    info "migrating from prettier to oxfmt"
+    # Remove prettier from package.json if present
+    if jq -e '.dependencies.prettier // .devDependencies.prettier' package.json &>/dev/null; then
+      jq 'del(.dependencies.prettier) | del(.devDependencies.prettier)' package.json > package.json.tmp && mv package.json.tmp package.json
+      TOOLS_REMOVED+=("prettier")
+    fi
+    # Remove prettier config files
+    for config in "${PRETTIER_CONFIGS[@]}"; do
+      if [[ -f "$config" ]]; then
+        rm "$config"
+        TOOLS_REMOVED+=("$config")
+        info "removed $config"
+      fi
+    done
+  else
+    info "keeping prettier (skipping oxc setup)"
+    SKIP_OXC=true
+  fi
+fi
+
+# Check for existing oxc configs (only if not already skipping)
+if [[ $SKIP_OXC == false && (-f .oxlintrc.json || -f .oxfmtrc.json) ]]; then
+  echo ""
+  echo "  Found existing oxc configuration."
+  OXC_PREPL="m"
+  if [[ "$AUTO_YES" == false ]]; then
+    read -rp "  [M]erge with skill rules / [R]eplace / [K]eep existing: " -n 1 -r || true
+    OXC_PREPL="$REPLY"
+  fi
+  echo ""
+  case $OXC_PREPL in
+    [Rr])
+      info "replacing existing oxc configs with skill rules"
+      rm -f .oxlintrc.json .oxfmtrc.json
+      OXC_MODE="replace"
+      ;;
+    [Kk])
+      info "keeping existing oxc configs (skipping oxc setup)"
+      SKIP_OXC=true
+      ;;
+    *)
+      info "merging skill rules with existing oxc configs"
+      OXC_MODE="merge"
+      ;;
+  esac
+fi
+
+# ESLint: warn but don't auto-remove (user should manually migrate)
+if jq -e '.dependencies.eslint // .devDependencies.eslint' package.json &>/dev/null; then
+  warn "eslint detected — consider migrating to oxlint for better performance"
+  warn "eslint and oxlint have overlapping rules and may conflict"
+  TOOLS_WARNED+=("eslint")
+fi
 
 # ── detect package manager ───────────────────────────────
 if command -v vp &>/dev/null; then
@@ -115,11 +244,17 @@ prompt_merge() {
   if [[ ! -f "$file" ]]; then return 0; fi
   echo ""
   echo "  Found existing $file"
-  read -rp "  Merge missing/conflicting options into $file? [y/N] " -n 1 -r || true
+  MERGE_PREPL="Y"
+  if [[ "$AUTO_YES" == false ]]; then
+    read -rp "  Merge missing/conflicting options into $file? [Y/n] " -n 1 -r || true
+    MERGE_PREPL="$REPLY"
+  fi
   echo ""
-  if [[ $REPLY =~ ^[Yy]$ ]]; then return 0; fi
-  warn "$file"
-  return 1
+  if [[ "$MERGE_PREPL" == [Nn] ]]; then
+    warn "$file"
+    return 1
+  fi
+  return 0
 }
 
 # ── expected configs (all JSON) ───────────────────────────
@@ -188,11 +323,20 @@ EXPECTED[tsconfig.build.json]='{
 }'
 
 # Deterministic processing order (avoids bash assoc-array hash-order chaos)
-CONFIG_ORDER=(.oxlintrc.json .oxfmtrc.json .dprint.json tsconfig.json tsconfig.build.json)
+if [[ $SKIP_OXC == true ]]; then
+  CONFIG_ORDER=(.dprint.json tsconfig.json tsconfig.build.json)
+else
+  CONFIG_ORDER=(.oxlintrc.json .oxfmtrc.json .dprint.json tsconfig.json tsconfig.build.json)
+fi
 
 # ── process config files ──────────────────────────────────
 merge_config() {
   local file="$1" new_json="$2"
+
+  # If OXC_MODE is "replace", delete existing oxc configs first
+  if [[ "$OXC_MODE" == "replace" && ("$file" == ".oxlintrc.json" || "$file" == ".oxfmtrc.json") ]]; then
+    rm -f "$file"
+  fi
 
   if [[ ! -f "$file" ]]; then
     printf '%s\n' "$new_json" > "$file"
@@ -252,16 +396,20 @@ for file in "${CONFIG_ORDER[@]}"; do
 done
 
 # ── scripts (track per-script: added vs preserved) ────────
-# Deterministic order
-SCRIPT_ORDER=(lint lint:fix format format:check typecheck check)
+# Deterministic order (skip oxc scripts if SKIP_OXC is true)
+if [[ $SKIP_OXC == true ]]; then
+  SCRIPT_ORDER=(format format:check typecheck check)
+else
+  SCRIPT_ORDER=(lint lint:fix format format:check typecheck check)
+fi
 
 declare -A SCRIPT_VALUES
-SCRIPT_VALUES[lint]="oxlint ."
-SCRIPT_VALUES[lint:fix]="oxlint --fix ."
+SCRIPT_VALUES[lint]="oxlint --type-aware ."
+SCRIPT_VALUES[lint:fix]="oxlint --type-aware --fix ."
 SCRIPT_VALUES[format]="oxfmt . && dprint fmt"
 SCRIPT_VALUES[format:check]="oxfmt --check . && dprint check"
 SCRIPT_VALUES[typecheck]="tsc --noEmit"
-SCRIPT_VALUES[check]="oxlint . && oxfmt --check . && dprint check && tsc --noEmit"
+SCRIPT_VALUES[check]="oxlint --type-aware . && oxfmt --check . && dprint check && tsc --noEmit"
 
 # Track which scripts will be added vs preserved BEFORE the merge
 declare -A PRESERVED_SCRIPT_VALUES
@@ -277,19 +425,37 @@ for script in "${SCRIPT_ORDER[@]}"; do
 done
 
 # jq: only add keys that don't already exist (//=)
-jq '
-  .scripts = .scripts // {} |
-  .scripts.lint              //= "oxlint ." |
-  .scripts["lint:fix"]       //= "oxlint --fix ." |
-  .scripts.format            //= "oxfmt . && dprint fmt" |
-  .scripts["format:check"]   //= "oxfmt --check . && dprint check" |
-  .scripts.typecheck         //= "tsc --noEmit" |
-  .scripts.check             //= "oxlint . && oxfmt --check . && dprint check && tsc --noEmit"
-' package.json > package.json.tmp && mv package.json.tmp package.json
+if [[ $SKIP_OXC == true ]]; then
+  # Skip oxc scripts, only add dprint/tsc scripts
+  jq '
+    .scripts = .scripts // {} |
+    .scripts.format            //= "dprint fmt" |
+    .scripts["format:check"]   //= "dprint check" |
+    .scripts.typecheck         //= "tsc --noEmit" |
+    .scripts.check             //= "dprint check && tsc --noEmit"
+  ' package.json > package.json.tmp && mv package.json.tmp package.json
+else
+  jq '
+    .scripts = .scripts // {} |
+    .scripts.lint              //= "oxlint --type-aware ." |
+    .scripts["lint:fix"]       //= "oxlint --type-aware --fix ." |
+    .scripts.format            //= "oxfmt . && dprint fmt" |
+    .scripts["format:check"]   //= "oxfmt --check . && dprint check" |
+    .scripts.typecheck         //= "tsc --noEmit" |
+    .scripts.check             //= "oxlint --type-aware . && oxfmt --check . && dprint check && tsc --noEmit"
+  ' package.json > package.json.tmp && mv package.json.tmp package.json
+fi
 
 # ── install devDependencies ──────────────────────────────
 NEED=()
-for dep in oxlint oxfmt dprint typescript; do
+if [[ $SKIP_OXC == true ]]; then
+  # Skip oxc dependencies, only install dprint and typescript
+  DEPS_TO_CHECK=(dprint typescript)
+else
+  DEPS_TO_CHECK=(oxlint oxfmt dprint typescript)
+fi
+
+for dep in "${DEPS_TO_CHECK[@]}"; do
   if jq -e --arg d "$dep" '.devDependencies[$d] // .dependencies[$d]' package.json &>/dev/null; then
     DEPS_PRESENT+=("$dep")
   else
@@ -301,6 +467,51 @@ if [[ ${#NEED[@]} -gt 0 ]]; then
   info "installing: ${NEED[*]}"
   $ADD "${NEED[@]}"
   DEPS_INSTALLED=("${NEED[@]}")
+  COMMIT_FILES+=("package.json")
+fi
+
+# ── commit block ──────────────────────────────────────────
+# Commit only files created/modified by this script (not other working dir changes)
+if [[ -d .git ]] && command -v git &>/dev/null; then
+  # Collect all files that were created or modified
+  for f in "${CONFIGS_CREATED[@]}"; do [[ -f "$f" ]] && COMMIT_FILES+=("$f"); done
+  for f in "${CONFIGS_MERGED[@]}"; do [[ -f "$f" ]] && COMMIT_FILES+=("$f"); done
+  for f in "${CONFIGS_RENAMED[@]}"; do
+    # Extract the new filename from "old.jsonc → new.json"
+    NEW_FILE="${f##*→ }"
+    [[ -f "$NEW_FILE" ]] && COMMIT_FILES+=("$NEW_FILE")
+  done
+  [[ -f ".gitignore" ]] && [[ ${#GITIGNORE_ADDED[@]} -gt 0 ]] && COMMIT_FILES+=(".gitignore")
+  
+  # Stage only tracked files
+  if [[ ${#COMMIT_FILES[@]} -gt 0 ]]; then
+    STAGED_FILES=()
+    for f in "${COMMIT_FILES[@]}"; do
+      if git ls-files --error-unmatch "$f" &>/dev/null || [[ -f "$f" ]]; then
+        git add "$f" 2>/dev/null && STAGED_FILES+=("$f")
+      fi
+    done
+    
+    # Only commit if there are staged changes
+    if [[ ${#STAGED_FILES[@]} -gt 0 ]] && ! git diff --cached --quiet; then
+      COMMIT_MSG=$(cat <<'EOF'
+🎨 style: bootstrap code-style tooling
+
+Add strict TypeScript + OXC linting/formatting configuration
+
+- Install oxlint, oxfmt, dprint, typescript
+- Configure tsconfig with strict mode + noUncheckedIndexedAccess
+- Add lint, format, typecheck, and check scripts
+- Set up .gitignore entries (node_modules, dist, *.tsbuildinfo)
+- Enforce single quotes, no semicolons, 100 char line width
+
+Tooling: oxlint (--type-aware) + oxfmt + dprint + tsc
+EOF
+)
+      git commit -m "$COMMIT_MSG" --quiet
+      info "committed code-style setup ($(echo "${STAGED_FILES[*]}" | tr ' ' ', '))"
+    fi
+  fi
 fi
 
 # ── recap ─────────────────────────────────────────────────
@@ -311,6 +522,13 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 printf '  %-18s %s\n' "Package manager:" "$PM_DETECTED"
 printf '  %-18s %s\n' "Git:"             "$GIT_STATE"
+if [[ $SKIP_OXC == true ]]; then
+  printf '  %-18s %s\n' "OXC:"            "skipped (using existing tooling)"
+elif [[ "$OXC_MODE" == "replace" ]]; then
+  printf '  %-18s %s\n' "OXC:"            "replaced with skill rules"
+elif [[ "$OXC_MODE" == "merge" ]]; then
+  printf '  %-18s %s\n' "OXC:"            "merged with skill rules"
+fi
 echo ""
 
 # .gitignore
@@ -325,6 +543,14 @@ fi
 if [[ ${#CONFIGS_RENAMED[@]} -gt 0 ]]; then
   echo "  Renamed (.jsonc → .json):"
   for r in "${CONFIGS_RENAMED[@]}"; do printf '    → %s\n' "$r"; done
+  echo ""
+fi
+
+# Tool conflicts
+if [[ ${#TOOLS_REMOVED[@]} -gt 0 || ${#TOOLS_WARNED[@]} -gt 0 ]]; then
+  echo "  Tool conflicts:"
+  for tool in "${TOOLS_REMOVED[@]}"; do printf '    ✗ %-22s removed\n'  "$tool"; done
+  for tool in "${TOOLS_WARNED[@]}"; do printf '    ⚠ %-22s warning\n'   "$tool"; done
   echo ""
 fi
 

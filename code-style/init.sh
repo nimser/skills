@@ -62,6 +62,7 @@ declare -a DEPS_INSTALLED=()  DEPS_PRESENT=()
 declare -a GITIGNORE_ADDED=() GITIGNORE_PRESENT=()
 declare -a TOOLS_REMOVED=()   TOOLS_WARNED=()
 declare -a COMMIT_FILES=()
+HOOK_STATE=""
 
 # ── early checks for existing project ────────────────────
 SKIP_OXC=false
@@ -155,8 +156,8 @@ fi
 
 # ESLint: warn but don't auto-remove (user should manually migrate)
 if jq -e '.dependencies.eslint // .devDependencies.eslint' package.json &>/dev/null; then
-  warn "eslint detected — consider migrating to oxlint for better performance"
-  warn "eslint and oxlint have overlapping rules and may conflict"
+  info "eslint detected — consider migrating to oxlint for better performance"
+  info "oxlint reimplements many eslint rules — running both will produce duplicate reports"
   TOOLS_WARNED+=("eslint")
 fi
 
@@ -470,6 +471,60 @@ if [[ ${#NEED[@]} -gt 0 ]]; then
   COMMIT_FILES+=("package.json")
 fi
 
+# ── pre-commit hook ─────────────────────────────────────────
+if [[ -d .git ]]; then
+  HOOK_DIR=".git/hooks"
+  HOOK_FILE="${HOOK_DIR}/pre-commit"
+  mkdir -p "$HOOK_DIR"
+
+  if [[ -f "$HOOK_FILE" ]] && grep -q "code-style/init.sh" "$HOOK_FILE"; then
+    # Our hook already installed — refresh silently
+    cat > "$HOOK_FILE" <<HOOKEOF
+#!/usr/bin/env bash
+# pre-commit hook — installed by code-style/init.sh
+# Bypass: git commit --no-verify
+set -e
+${RUN} format
+${RUN} check
+HOOKEOF
+    chmod +x "$HOOK_FILE"
+    HOOK_STATE="refreshed"
+    info "refreshed pre-commit hook (format + check)"
+  elif [[ -f "$HOOK_FILE" ]]; then
+    # Someone else's hook — never overwrite silently
+    HOOK_STATE="skipped (existing hook preserved)"
+    warn ".git/hooks/pre-commit (not ours — preserved, not overwritten)"
+  else
+    INSTALL_HOOK=true
+    if [[ "$AUTO_YES" == false ]]; then
+      echo ""
+      read -rp "  Set up pre-commit hook (format + check before every commit)? [Y/n] " -n 1 -r || true
+      echo ""
+      if [[ $REPLY == [Nn] ]]; then
+        INSTALL_HOOK=false
+      fi
+    fi
+    if [[ "$INSTALL_HOOK" == true ]]; then
+      cat > "$HOOK_FILE" <<HOOKEOF
+#!/usr/bin/env bash
+# pre-commit hook — installed by code-style/init.sh
+# Bypass: git commit --no-verify
+set -e
+${RUN} format
+${RUN} check
+HOOKEOF
+      chmod +x "$HOOK_FILE"
+      HOOK_STATE="installed (format + check)"
+      info "installed pre-commit hook (format + check)"
+    else
+      HOOK_STATE="skipped (user declined)"
+      info "skipping pre-commit hook (user declined)"
+    fi
+  fi
+else
+  HOOK_STATE="skipped (no .git)"
+fi
+
 # ── commit block ──────────────────────────────────────────
 # Commit only files created/modified by this script (not other working dir changes)
 if [[ -d .git ]] && command -v git &>/dev/null; then
@@ -502,6 +557,7 @@ Add strict TypeScript + OXC linting/formatting configuration
 - Install oxlint, oxfmt, dprint, typescript
 - Configure tsconfig with strict mode + noUncheckedIndexedAccess
 - Add lint, format, typecheck, and check scripts
+- Install pre-commit hook (runs check on every commit)
 - Set up .gitignore entries (node_modules, dist, *.tsbuildinfo)
 - Enforce single quotes, no semicolons, 100 char line width
 
@@ -528,6 +584,9 @@ elif [[ "$OXC_MODE" == "replace" ]]; then
   printf '  %-18s %s\n' "OXC:"            "replaced with skill rules"
 elif [[ "$OXC_MODE" == "merge" ]]; then
   printf '  %-18s %s\n' "OXC:"            "merged with skill rules"
+fi
+if [[ -n "$HOOK_STATE" ]]; then
+  printf '  %-18s %s\n' "Pre-commit hook:" "$HOOK_STATE"
 fi
 echo ""
 

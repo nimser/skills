@@ -59,6 +59,37 @@ Apply these conventions to every TypeScript/JavaScript file.
 - Subpath exports fine, but always explicit — no accidental surface leaks
 - Library packages: separate `tsconfig.build.json` with `declaration` + `declarationMap`
 
-## Typecheck Gate
-- Run `check` script (lint + fmt + typecheck) before committing
-- `tsc --noEmit` catches what linters cannot
+## Scripts (run via package manager)
+
+These scripts are set up by `code-style/init.sh` and installed as devDependencies (`oxlint`, `oxfmt`, `dprint`, `typescript`).
+
+| Script           | Command                                              | Purpose                            |
+| ---------------- | ---------------------------------------------------- | ---------------------------------- |
+| `lint`           | `oxlint --type-aware .`                              | Check for lint issues (type-aware) |
+| `lint:fix`       | `oxlint --type-aware --fix .`                        | Auto-fix fixable lint issues       |
+| `format`         | `oxfmt . && dprint fmt`                              | Format code and markdown in place  |
+| `format:check`   | `oxfmt --check . && dprint check`                    | CI / verify formatting is clean    |
+| `typecheck`      | `tsc --noEmit`                                       | Type-check only                    |
+| `check`          | `oxlint --type-aware . && oxfmt --check . && dprint check && tsc --noEmit` | Full gate (lint + format + typecheck) |
+
+### Pre-commit hook
+
+`code-style/init.sh` installs a `.git/hooks/pre-commit` hook that runs **`format`** then **`check`** before every commit. Formatting is applied automatically; lint and typecheck must pass for the commit to proceed.
+
+- **Bypass** (escape hatch): `git commit --no-verify`
+- The hook is interactive during `init.sh` — it asks on existing projects, auto-installs on nimser repos and fresh projects
+- If a non-code-style pre-commit hook already exists, it is preserved (never overwritten)
+
+### Agent workflow
+
+Just commit — the hook runs `format` (auto-fix) and `check` (lint + format-verify + typecheck) as a gate. If it fails, fix the reported issues and commit again.
+
+### When to use `lint:fix`
+
+`lint:fix` applies automatic fixes that can change code semantics (renaming variables, removing unused imports, rewriting expressions). **Always review the diff** after running it — don't run it blindly before committing. Use it when:
+
+- You want to see what the linter would auto-fix
+- You've introduced a batch of lint issues and want to fix the safe ones in bulk
+- You're exploring what a rule violation looks like when auto-corrected
+
+After `lint:fix`, review the changes, then commit as normal (the hook will run format + check).

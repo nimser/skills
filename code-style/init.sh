@@ -24,10 +24,20 @@ done
 
 cd "$TARGET_DIR"
 
+# ── color support (respects NO_COLOR and non-TTY) ────────
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  C_RESET=$'\033[0m'
+  C_YELLOW=$'\033[33m'
+  C_RED=$'\033[1;31m'
+  C_GREEN=$'\033[32m'
+else
+  C_RESET="" C_YELLOW="" C_RED="" C_GREEN=""
+fi
+
 # ── helpers ──────────────────────────────────────────────
 info() { echo "  code-style: $*"; }
-warn() { echo "  (skipping $1 — already exists)"; }
-err()  { echo "  ✗ $*"; exit 1; }
+warn() { echo "  ${C_YELLOW}⚠ $*${C_RESET}"; }
+err()  { echo "  ${C_RED}✗ $*${C_RESET}"; exit 1; }
 
 # ── auto-detect -y based on git remote ────────────────────
 if [[ "$AUTO_YES" == false && -d .git ]] && command -v git &>/dev/null; then
@@ -156,8 +166,8 @@ fi
 
 # ESLint: warn but don't auto-remove (user should manually migrate)
 if jq -e '.dependencies.eslint // .devDependencies.eslint' package.json &>/dev/null; then
-  info "eslint detected — consider migrating to oxlint for better performance"
-  info "oxlint reimplements many eslint rules — running both will produce duplicate reports"
+  warn "eslint detected — consider migrating to oxlint for better performance"
+  warn "oxlint reimplements many eslint rules — running both will produce duplicate reports"
   TOOLS_WARNED+=("eslint")
 fi
 
@@ -573,79 +583,69 @@ fi
 # ── recap ─────────────────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Code Style Init — Recap"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-printf '  %-18s %s\n' "Package manager:" "$PM_DETECTED"
-printf '  %-18s %s\n' "Git:"             "$GIT_STATE"
+
+# Status line
+STATUS="PM: ${PM_DETECTED} | Git: ${GIT_STATE}"
 if [[ $SKIP_OXC == true ]]; then
-  printf '  %-18s %s\n' "OXC:"            "skipped (using existing tooling)"
-elif [[ "$OXC_MODE" == "replace" ]]; then
-  printf '  %-18s %s\n' "OXC:"            "replaced with skill rules"
-elif [[ "$OXC_MODE" == "merge" ]]; then
-  printf '  %-18s %s\n' "OXC:"            "merged with skill rules"
+  STATUS+=" | OXC: skipped"
+elif [[ -n "$OXC_MODE" ]]; then
+  STATUS+=" | OXC: ${OXC_MODE}"
 fi
-if [[ -n "$HOOK_STATE" ]]; then
-  printf '  %-18s %s\n' "Pre-commit hook:" "$HOOK_STATE"
-fi
-echo ""
+[[ -n "$HOOK_STATE" ]] && STATUS+=" | Hook: ${HOOK_STATE}"
+echo "  $STATUS"
 
-# .gitignore
-if [[ ${#GITIGNORE_ADDED[@]} -gt 0 || ${#GITIGNORE_PRESENT[@]} -gt 0 ]]; then
-  echo "  .gitignore:"
-  for entry in "${GITIGNORE_ADDED[@]}";   do printf '    + %-20s (added)\n'    "$entry"; done
-  for entry in "${GITIGNORE_PRESENT[@]}"; do printf '    ~ %-20s (present)\n'  "$entry"; done
-  echo ""
+# Config files (compact)
+if [[ ${#CONFIGS_CREATED[@]} -gt 0 || ${#CONFIGS_MERGED[@]} -gt 0 || ${#CONFIGS_SKIPPED[@]} -gt 0 ]]; then
+  CONFIG_LINE=""
+  for f in "${CONFIGS_CREATED[@]}"; do CONFIG_LINE+="+$f "; done
+  for f in "${CONFIGS_MERGED[@]}";  do CONFIG_LINE+="~$f "; done
+  for f in "${CONFIGS_SKIPPED[@]}"; do CONFIG_LINE+="-$f "; done
+  echo "  Config: ${CONFIG_LINE% }"
 fi
 
-# Renames
-if [[ ${#CONFIGS_RENAMED[@]} -gt 0 ]]; then
-  echo "  Renamed (.jsonc → .json):"
-  for r in "${CONFIGS_RENAMED[@]}"; do printf '    → %s\n' "$r"; done
-  echo ""
+# Scripts (compact)
+if [[ ${#SCRIPTS_ADDED[@]} -gt 0 || ${#SCRIPTS_PRESERVED[@]} -gt 0 ]]; then
+  SCRIPT_LINE=""
+  for s in "${SCRIPTS_ADDED[@]}"; do SCRIPT_LINE+="+$s "; done
+  for s in "${SCRIPTS_PRESERVED[@]}"; do SCRIPT_LINE+="~$s "; done
+  echo "  Scripts: ${SCRIPT_LINE% }"
 fi
 
-# Tool conflicts
+# Dependencies (compact)
+if [[ ${#DEPS_INSTALLED[@]} -gt 0 || ${#DEPS_PRESENT[@]} -gt 0 ]]; then
+  DEP_LINE=""
+  for d in "${DEPS_INSTALLED[@]}"; do DEP_LINE+="+$d "; done
+  for d in "${DEPS_PRESENT[@]}";   do DEP_LINE+="~$d "; done
+  echo "  Deps: ${DEP_LINE% }"
+fi
+
+# .gitignore (compact)
+if [[ ${#GITIGNORE_ADDED[@]} -gt 0 ]]; then
+  GIT_LINE=""
+  for entry in "${GITIGNORE_ADDED[@]}"; do GIT_LINE+="+$entry "; done
+  echo "  .gitignore: ${GIT_LINE% }"
+fi
+
+# Warnings (compact)
 if [[ ${#TOOLS_REMOVED[@]} -gt 0 || ${#TOOLS_WARNED[@]} -gt 0 ]]; then
-  echo "  Tool conflicts:"
-  for tool in "${TOOLS_REMOVED[@]}"; do printf '    ✗ %-22s removed\n'  "$tool"; done
-  for tool in "${TOOLS_WARNED[@]}"; do printf '    ⚠ %-22s warning\n'   "$tool"; done
-  echo ""
+  WARN_LINE=""
+  for tool in "${TOOLS_REMOVED[@]}"; do WARN_LINE+="${C_RED}✗$tool${C_RESET} "; done
+  for tool in "${TOOLS_WARNED[@]}"; do WARN_LINE+="${C_YELLOW}⚠$tool${C_RESET} "; done
+  echo "  Warnings: ${WARN_LINE% }"
 fi
 
-# Config files
-echo "  Config files:"
-for f in "${CONFIGS_CREATED[@]}"; do printf '    + %-22s created\n'  "$f"; done
-for f in "${CONFIGS_MERGED[@]}";  do printf '    ~ %-22s merged\n'   "$f"; done
-for f in "${CONFIGS_SKIPPED[@]}"; do printf '    - %-22s skipped\n'  "$f"; done
-echo ""
-
-# Scripts
-echo "  Scripts:"
-for s in "${SCRIPTS_ADDED[@]}"; do
-  printf '    + %-22s added (%s)\n' "$s" "${SCRIPT_VALUES[$s]}"
-done
-for s in "${SCRIPTS_PRESERVED[@]}"; do
-  printf '    ~ %-22s preserved (%s)\n' "$s" "${PRESERVED_SCRIPT_VALUES[$s]}"
-done
-echo ""
-
-# Dependencies
-echo "  Dependencies:"
-for d in "${DEPS_INSTALLED[@]}"; do printf '    + %-22s installed\n'  "$d"; done
-for d in "${DEPS_PRESENT[@]}";   do printf '    ~ %-22s present\n'    "$d"; done
-echo ""
-
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+# Renames (compact)
+if [[ ${#CONFIGS_RENAMED[@]} -gt 0 ]]; then
+  echo "  Renamed: ${CONFIGS_RENAMED[*]}"
+fi
 
 TOTAL_ACTIONS=$(( ${#CONFIGS_CREATED[@]} + ${#CONFIGS_MERGED[@]} + \
                   ${#SCRIPTS_ADDED[@]}   + ${#DEPS_INSTALLED[@]} ))
 
 if [[ $TOTAL_ACTIONS -eq 0 ]]; then
-  echo "  Nothing to do — project already fully configured"
+  echo "  ${C_GREEN}✓${C_RESET} Nothing to do — project already fully configured"
 else
-  echo "  ✓ Setup complete"
-  echo "  Try: $RUN check"
+  echo "  ${C_GREEN}✓${C_RESET} Setup complete — try: $RUN check"
 fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""

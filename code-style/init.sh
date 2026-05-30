@@ -97,93 +97,168 @@ if [[ -f package.json || -f .oxlintrc.json || -f .oxfmtrc.json || \
   fi
 fi
 
-# Check for prettier config
+# Check for prettier (config files, package.json dep, or inline config)
 PRETTIER_CONFIGS=(.prettierrc .prettierrc.json .prettierrc.yml .prettierrc.yaml .prettierrc.js .prettierrc.cjs prettier.config.js prettier.config.cjs)
 PRETTIER_FOUND=false
+PRETTIER_CONFIG_FILE=""
 for config in "${PRETTIER_CONFIGS[@]}"; do
   if [[ -f "$config" ]]; then
     PRETTIER_FOUND=true
+    PRETTIER_CONFIG_FILE="$config"
     break
   fi
 done
 
-if [[ $PRETTIER_FOUND == true ]]; then
-  echo ""
-  echo "  Found prettier configuration."
+# Also detect prettier in package.json (devDependencies, inline "prettier" config key, or scripts)
+PRETTIER_IN_DEPS=false
+PRETTIER_INLINE_CONFIG=false
+PRETTIER_IN_SCRIPTS=false
+if [[ -f package.json ]]; then
+  if jq -e '.dependencies.prettier // .devDependencies.prettier' package.json &>/dev/null; then
+    PRETTIER_IN_DEPS=true
+  fi
+  if jq -e '.prettier' package.json &>/dev/null; then
+    PRETTIER_INLINE_CONFIG=true
+  fi
+  if jq -e '[.scripts // {} | to_entries[] | select(.value | test("prettier"))] | length > 0' package.json &>/dev/null; then
+    PRETTIER_IN_SCRIPTS=true
+  fi
+fi
+
+if [[ $PRETTIER_FOUND == true || $PRETTIER_IN_DEPS == true || $PRETTIER_INLINE_CONFIG == true || $PRETTIER_IN_SCRIPTS == true ]]; then
   MIGRATE_PREPL="Y"
   if [[ "$AUTO_YES" == false ]]; then
-    read -rp "  Migrate to oxc (oxfmt)? [Y/n] " -n 1 -r || true
+    echo ""
+    read -rp "  Migrate prettier to oxfmt? [Y/n] " -n 1 -r || true
     MIGRATE_PREPL="$REPLY"
+    echo ""
   fi
-  echo ""
   if [[ "$MIGRATE_PREPL" != [Nn] ]]; then
-    info "migrating from prettier to oxfmt"
-    # Remove prettier from package.json if present
-    if jq -e '.dependencies.prettier // .devDependencies.prettier' package.json &>/dev/null; then
+    # Remove prettier from package.json dependencies
+    if [[ $PRETTIER_IN_DEPS == true ]]; then
       jq 'del(.dependencies.prettier) | del(.devDependencies.prettier)' package.json > package.json.tmp && mv package.json.tmp package.json
       TOOLS_REMOVED+=("prettier")
+    fi
+    # Remove inline prettier config from package.json
+    if [[ $PRETTIER_INLINE_CONFIG == true ]]; then
+      jq 'del(.prettier)' package.json > package.json.tmp && mv package.json.tmp package.json
+      TOOLS_REMOVED+=("prettier-config-in-package.json")
     fi
     # Remove prettier config files
     for config in "${PRETTIER_CONFIGS[@]}"; do
       if [[ -f "$config" ]]; then
         rm "$config"
         TOOLS_REMOVED+=("$config")
-        info "removed $config"
       fi
     done
   else
-    info "keeping prettier (skipping oxc setup)"
     SKIP_OXC=true
   fi
 fi
 
 # Check for existing oxc configs (only if not already skipping)
 if [[ $SKIP_OXC == false && (-f .oxlintrc.json || -f .oxfmtrc.json) ]]; then
-  echo ""
-  echo "  Found existing oxc configuration."
   OXC_PREPL="m"
   if [[ "$AUTO_YES" == false ]]; then
+    echo ""
     read -rp "  [M]erge with skill rules / [R]eplace / [K]eep existing: " -n 1 -r || true
     OXC_PREPL="$REPLY"
+    echo ""
   fi
-  echo ""
   case $OXC_PREPL in
     [Rr])
-      info "replacing existing oxc configs with skill rules"
       rm -f .oxlintrc.json .oxfmtrc.json
       OXC_MODE="replace"
       ;;
     [Kk])
-      info "keeping existing oxc configs (skipping oxc setup)"
       SKIP_OXC=true
       ;;
     *)
-      info "merging skill rules with existing oxc configs"
       OXC_MODE="merge"
       ;;
   esac
 fi
 
-# ESLint: warn but don't auto-remove (user should manually migrate)
-if jq -e '.dependencies.eslint // .devDependencies.eslint' package.json &>/dev/null; then
-  warn "eslint detected — consider migrating to oxlint for better performance"
-  warn "oxlint reimplements many eslint rules — running both will produce duplicate reports"
-  TOOLS_WARNED+=("eslint")
+# Check for eslint (config files, package.json dep, inline config, or scripts)
+ESLINT_CONFIGS=(.eslintrc .eslintrc.js .eslintrc.cjs .eslintrc.json .eslintrc.yml .eslintrc.yaml eslint.config.js eslint.config.mjs eslint.config.cjs eslint.config.ts eslint.config.mts)
+ESLINT_FOUND=false
+ESLINT_CONFIG_FILE=""
+for config in "${ESLINT_CONFIGS[@]}"; do
+  if [[ -f "$config" ]]; then
+    ESLINT_FOUND=true
+    ESLINT_CONFIG_FILE="$config"
+    break
+  fi
+done
+
+ESLINT_IN_DEPS=false
+ESLINT_INLINE_CONFIG=false
+ESLINT_IN_SCRIPTS=false
+if [[ -f package.json ]]; then
+  if jq -e '.dependencies.eslint // .devDependencies.eslint' package.json &>/dev/null; then
+    ESLINT_IN_DEPS=true
+  fi
+  if jq -e '.eslintConfig' package.json &>/dev/null; then
+    ESLINT_INLINE_CONFIG=true
+  fi
+  if jq -e '[.scripts // {} | to_entries[] | select(.value | test("eslint"))] | length > 0' package.json &>/dev/null; then
+    ESLINT_IN_SCRIPTS=true
+  fi
+fi
+
+if [[ $ESLINT_FOUND == true || $ESLINT_IN_DEPS == true || $ESLINT_INLINE_CONFIG == true || $ESLINT_IN_SCRIPTS == true ]]; then
+  MIGRATE_ESLINT_REPL="Y"
+  if [[ "$AUTO_YES" == false ]]; then
+    echo ""
+    read -rp "  Migrate eslint to oxlint? [Y/n] " -n 1 -r || true
+    MIGRATE_ESLINT_REPL="$REPLY"
+    echo ""
+  fi
+  if [[ "$MIGRATE_ESLINT_REPL" != [Nn] ]]; then
+    # Remove eslint and related packages from package.json
+    if [[ $ESLINT_IN_DEPS == true ]]; then
+      jq '
+        if .devDependencies then
+          .devDependencies |= with_entries(select(.key | test("^eslint|^@typescript-eslint/(parser|eslint-plugin)$") | not))
+        else . end |
+        if .dependencies then
+          .dependencies |= with_entries(select(.key | test("^eslint|^@typescript-eslint/(parser|eslint-plugin)$") | not))
+        else . end
+      ' package.json > package.json.tmp && mv package.json.tmp package.json
+      TOOLS_REMOVED+=("eslint+plugins")
+    fi
+    # Remove inline eslint config from package.json
+    if [[ $ESLINT_INLINE_CONFIG == true ]]; then
+      jq 'del(.eslintConfig)' package.json > package.json.tmp && mv package.json.tmp package.json
+      TOOLS_REMOVED+=("eslintConfig-in-package.json")
+    fi
+    # Remove eslint config files
+    for config in "${ESLINT_CONFIGS[@]}"; do
+      if [[ -f "$config" ]]; then
+        rm "$config"
+        TOOLS_REMOVED+=("$config")
+      fi
+    done
+    # Remove .eslintignore if present
+    if [[ -f .eslintignore ]]; then
+      rm .eslintignore
+      TOOLS_REMOVED+=(".eslintignore")
+    fi
+  else
+    TOOLS_WARNED+=("eslint")
+  fi
 fi
 
 # ── detect package manager ───────────────────────────────
 if command -v vp &>/dev/null; then
   ADD="vp add -D"; RUN="vp run"
   PM_DETECTED="vp (vite-plus)"
-  info "using vite-plus (vp)"
 elif command -v pnpm &>/dev/null; then
   ADD="pnpm add -D"; RUN="pnpm run"
   PM_DETECTED="pnpm"
-  info "using pnpm"
 else
   ADD="npm install --save-dev"; RUN="npm run"
   PM_DETECTED="npm"
-  info "using npm (fallback)"
 fi
 
 # ── .gitignore (before git init) ──────────────────────────
@@ -194,7 +269,6 @@ if [[ ! -f .gitignore ]]; then
     printf '%s\n' "$entry" >> .gitignore
     GITIGNORE_ADDED+=("$entry")
   done
-  info "created .gitignore"
 else
   for entry in "${GITIGNORE_ENTRIES[@]}"; do
     if ! grep -qxF "$entry" .gitignore; then
@@ -218,8 +292,7 @@ else
            .oxlintrc.json .oxfmtrc.json .dprint.json; do
     [[ -f "$f" ]] && git add "$f" 2>/dev/null || true
   done
-  GIT_STATE="initialized (staged existing files — git checkout -- <file> to revert)"
-  info "git initialized — existing files staged for revert"
+  GIT_STATE="initialized (staged existing files)"
 fi
 
 # ── rename .jsonc → .json before processing ───────────────
@@ -229,9 +302,6 @@ for base in "${JSONC_VARIANTS[@]}"; do
   if [[ -f "${base}.jsonc" && ! -f "${base}.json" ]]; then
     mv "${base}.jsonc" "${base}.json"
     CONFIGS_RENAMED+=("${base}.jsonc → ${base}.json")
-    info "renamed ${base}.jsonc → ${base}.json"
-  elif [[ -f "${base}.jsonc" && -f "${base}.json" ]]; then
-    warn "${base}.jsonc (kept alongside ${base}.json — you may want to delete .jsonc manually)"
   fi
 done
 
@@ -245,7 +315,6 @@ if [[ ! -f package.json ]]; then
   "scripts": {}
 }
 PKG
-  info "created minimal package.json"
 fi
 
 # ── interactive merge prompt ──────────────────────────────
@@ -253,16 +322,14 @@ fi
 prompt_merge() {
   local file="$1"
   if [[ ! -f "$file" ]]; then return 0; fi
-  echo ""
-  echo "  Found existing $file"
   MERGE_PREPL="Y"
   if [[ "$AUTO_YES" == false ]]; then
-    read -rp "  Merge missing/conflicting options into $file? [Y/n] " -n 1 -r || true
+    echo ""
+    read -rp "  Merge into $file? [Y/n] " -n 1 -r || true
     MERGE_PREPL="$REPLY"
+    echo ""
   fi
-  echo ""
   if [[ "$MERGE_PREPL" == [Nn] ]]; then
-    warn "$file"
     return 1
   fi
   return 0
@@ -352,7 +419,6 @@ merge_config() {
   if [[ ! -f "$file" ]]; then
     printf '%s\n' "$new_json" > "$file"
     CONFIGS_CREATED+=("$file")
-    info "created $file"
     return 0
   fi
 
@@ -399,7 +465,6 @@ merge_config() {
   esac
 
   CONFIGS_MERGED+=("$file")
-  info "merged missing options into $file"
 }
 
 for file in "${CONFIG_ORDER[@]}"; do
@@ -435,25 +500,25 @@ for script in "${SCRIPT_ORDER[@]}"; do
   fi
 done
 
-# jq: only add keys that don't already exist (//=)
+# jq: always set canonical scripts (=), they are the definitive commands for this tooling
 if [[ $SKIP_OXC == true ]]; then
-  # Skip oxc scripts, only add dprint/tsc scripts
+  # Skip oxc scripts, only set dprint/tsc scripts
   jq '
     .scripts = .scripts // {} |
-    .scripts.format            //= "dprint fmt" |
-    .scripts["format:check"]   //= "dprint check" |
-    .scripts.typecheck         //= "tsc --noEmit" |
-    .scripts.check             //= "dprint check && tsc --noEmit"
+    .scripts.format            = "dprint fmt" |
+    .scripts["format:check"]   = "dprint check" |
+    .scripts.typecheck         = "tsc --noEmit" |
+    .scripts.check             = "dprint check && tsc --noEmit"
   ' package.json > package.json.tmp && mv package.json.tmp package.json
 else
   jq '
     .scripts = .scripts // {} |
-    .scripts.lint              //= "oxlint --type-aware ." |
-    .scripts["lint:fix"]       //= "oxlint --type-aware --fix ." |
-    .scripts.format            //= "oxfmt . && dprint fmt" |
-    .scripts["format:check"]   //= "oxfmt --check . && dprint check" |
-    .scripts.typecheck         //= "tsc --noEmit" |
-    .scripts.check             //= "oxlint --type-aware . && oxfmt --check . && dprint check && tsc --noEmit"
+    .scripts.lint              = "oxlint --type-aware ." |
+    .scripts["lint:fix"]       = "oxlint --type-aware --fix ." |
+    .scripts.format            = "oxfmt . && dprint fmt" |
+    .scripts["format:check"]   = "oxfmt --check . && dprint check" |
+    .scripts.typecheck         = "tsc --noEmit" |
+    .scripts.check             = "oxlint --type-aware . && oxfmt --check . && dprint check && tsc --noEmit"
   ' package.json > package.json.tmp && mv package.json.tmp package.json
 fi
 
@@ -475,7 +540,6 @@ for dep in "${DEPS_TO_CHECK[@]}"; do
 done
 
 if [[ ${#NEED[@]} -gt 0 ]]; then
-  info "installing: ${NEED[*]}"
   $ADD "${NEED[@]}"
   DEPS_INSTALLED=("${NEED[@]}")
   COMMIT_FILES+=("package.json")
@@ -499,11 +563,10 @@ ${RUN} check
 HOOKEOF
     chmod +x "$HOOK_FILE"
     HOOK_STATE="refreshed"
-    info "refreshed pre-commit hook (format + check)"
   elif [[ -f "$HOOK_FILE" ]]; then
     # Someone else's hook — never overwrite silently
     HOOK_STATE="skipped (existing hook preserved)"
-    warn ".git/hooks/pre-commit (not ours — preserved, not overwritten)"
+    TOOLS_WARNED+=("pre-commit-hook")
   else
     INSTALL_HOOK=true
     if [[ "$AUTO_YES" == false ]]; then
@@ -524,11 +587,9 @@ ${RUN} format
 ${RUN} check
 HOOKEOF
       chmod +x "$HOOK_FILE"
-      HOOK_STATE="installed (format + check)"
-      info "installed pre-commit hook (format + check)"
+      HOOK_STATE="installed"
     else
       HOOK_STATE="skipped (user declined)"
-      info "skipping pre-commit hook (user declined)"
     fi
   fi
 else
@@ -575,7 +636,6 @@ Tooling: oxlint (--type-aware) + oxfmt + dprint + tsc
 EOF
 )
       git commit -m "$COMMIT_MSG" --quiet
-      info "committed code-style setup ($(echo "${STAGED_FILES[*]}" | tr ' ' ', '))"
     fi
   fi
 fi
@@ -583,6 +643,13 @@ fi
 # ── recap ─────────────────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Warnings first (most important)
+if [[ ${#TOOLS_REMOVED[@]} -gt 0 || ${#TOOLS_WARNED[@]} -gt 0 ]]; then
+  for tool in "${TOOLS_REMOVED[@]}"; do echo "  ${C_RED}✗ removed:${C_RESET} $tool"; done
+  for tool in "${TOOLS_WARNED[@]}"; do echo "  ${C_YELLOW}⚠ kept:${C_RESET} $tool"; done
+  echo ""
+fi
 
 # Status line
 STATUS="PM: ${PM_DETECTED} | Git: ${GIT_STATE}"
@@ -597,16 +664,16 @@ echo "  $STATUS"
 # Config files (compact)
 if [[ ${#CONFIGS_CREATED[@]} -gt 0 || ${#CONFIGS_MERGED[@]} -gt 0 || ${#CONFIGS_SKIPPED[@]} -gt 0 ]]; then
   CONFIG_LINE=""
-  for f in "${CONFIGS_CREATED[@]}"; do CONFIG_LINE+="+$f "; done
+  for f in "${CONFIGS_CREATED[@]}"; do CONFIG_LINE+="${C_GREEN}+$f${C_RESET} "; done
   for f in "${CONFIGS_MERGED[@]}";  do CONFIG_LINE+="~$f "; done
-  for f in "${CONFIGS_SKIPPED[@]}"; do CONFIG_LINE+="-$f "; done
+  for f in "${CONFIGS_SKIPPED[@]}"; do CONFIG_LINE+="${C_YELLOW}-$f${C_RESET} "; done
   echo "  Config: ${CONFIG_LINE% }"
 fi
 
 # Scripts (compact)
 if [[ ${#SCRIPTS_ADDED[@]} -gt 0 || ${#SCRIPTS_PRESERVED[@]} -gt 0 ]]; then
   SCRIPT_LINE=""
-  for s in "${SCRIPTS_ADDED[@]}"; do SCRIPT_LINE+="+$s "; done
+  for s in "${SCRIPTS_ADDED[@]}"; do SCRIPT_LINE+="${C_GREEN}+$s${C_RESET} "; done
   for s in "${SCRIPTS_PRESERVED[@]}"; do SCRIPT_LINE+="~$s "; done
   echo "  Scripts: ${SCRIPT_LINE% }"
 fi
@@ -614,7 +681,7 @@ fi
 # Dependencies (compact)
 if [[ ${#DEPS_INSTALLED[@]} -gt 0 || ${#DEPS_PRESENT[@]} -gt 0 ]]; then
   DEP_LINE=""
-  for d in "${DEPS_INSTALLED[@]}"; do DEP_LINE+="+$d "; done
+  for d in "${DEPS_INSTALLED[@]}"; do DEP_LINE+="${C_GREEN}+$d${C_RESET} "; done
   for d in "${DEPS_PRESENT[@]}";   do DEP_LINE+="~$d "; done
   echo "  Deps: ${DEP_LINE% }"
 fi
@@ -622,16 +689,8 @@ fi
 # .gitignore (compact)
 if [[ ${#GITIGNORE_ADDED[@]} -gt 0 ]]; then
   GIT_LINE=""
-  for entry in "${GITIGNORE_ADDED[@]}"; do GIT_LINE+="+$entry "; done
+  for entry in "${GITIGNORE_ADDED[@]}"; do GIT_LINE+="${C_GREEN}+$entry${C_RESET} "; done
   echo "  .gitignore: ${GIT_LINE% }"
-fi
-
-# Warnings (compact)
-if [[ ${#TOOLS_REMOVED[@]} -gt 0 || ${#TOOLS_WARNED[@]} -gt 0 ]]; then
-  WARN_LINE=""
-  for tool in "${TOOLS_REMOVED[@]}"; do WARN_LINE+="${C_RED}✗$tool${C_RESET} "; done
-  for tool in "${TOOLS_WARNED[@]}"; do WARN_LINE+="${C_YELLOW}⚠$tool${C_RESET} "; done
-  echo "  Warnings: ${WARN_LINE% }"
 fi
 
 # Renames (compact)
@@ -639,6 +698,7 @@ if [[ ${#CONFIGS_RENAMED[@]} -gt 0 ]]; then
   echo "  Renamed: ${CONFIGS_RENAMED[*]}"
 fi
 
+echo ""
 TOTAL_ACTIONS=$(( ${#CONFIGS_CREATED[@]} + ${#CONFIGS_MERGED[@]} + \
                   ${#SCRIPTS_ADDED[@]}   + ${#DEPS_INSTALLED[@]} ))
 

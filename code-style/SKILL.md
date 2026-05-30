@@ -26,13 +26,8 @@ Apply these conventions to every TypeScript/JavaScript file.
 - Prefer `satisfies` over `as` — narrows without widening
 - No `!` non-null assertions — narrow or use `?.`
 - Prefer `undefined` over `null`
-- Discriminated unions for exhaustive branching **and domain rules** — use the variant to make invalid states unrepresentable (e.g., a `kind: 'readonly'` variant only permits safe operations, not mutating ones; the illegal combo is a compile error, not a runtime check)
+- Discriminated unions for exhaustive branching
 - `noUncheckedIndexedAccess` means `arr[0]` is `T | undefined` — always handle
-- **Validators and parsers accept `unknown`, return type guards** — never accept the type a validator is validating; that's a lie about its job, and it lets untyped input crash through. Always `function parse(x: unknown): x is Rule`, never `function validate(rule: Rule): Result`
-- **Layer constraints at the highest expressing layer:** make invalid states unrepresentable before reaching for runtime checks
-  1. **Types** — discriminated unions and narrowed variants encode *domain rules* at compile time
-  2. **Type guards** — narrow `unknown` input structurally; the type system *forces* every defensive check to exist
-  3. **Runtime checks** — only invariants types cannot express (duplicate IDs, cross-record uniqueness, temporal constraints)
 
 ## Imports & Exports
 - Named exports only — **no default exports**
@@ -62,8 +57,8 @@ Apply these conventions to every TypeScript/JavaScript file.
 ## Package Exports
 - Explicit `exports` in `package.json` (types + import entries)
 - Subpath exports fine, but always explicit — no accidental surface leaks
-- Library packages: `declaration` + `declarationMap` for IDE nav
+- Library packages: separate `tsconfig.build.json` with `declaration` + `declarationMap`
 
 ## Typecheck Gate
-- Run `vp check` (lint + fmt + typecheck) before committing
+- Run `check` script (lint + fmt + typecheck) before committing
 - `tsc --noEmit` catches what linters cannot

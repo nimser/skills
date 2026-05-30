@@ -40,5 +40,6 @@ EOF
 
 ### 2. Handle failures (only if step 1 fails)
 
+- **Pre-commit hook rejection:** Read and strictly follow `{baseDir}/../pre-commit-failure/SKILL.md`. Never modify linting configuration, suppress rules, or bypass git hooks.
 - **SSH / auth error** (e.g., `Permission denied`, `publickey`, `Host key verification failed`): re-run `init.sh`, then retry step 1 **once**. If it still fails, inform the user.
 - **Non-auth error** (e.g., diverged remote): follow the "Force Push Safety" guidelines above.

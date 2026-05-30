@@ -24,6 +24,11 @@ done
 
 cd "$TARGET_DIR"
 
+# ── helpers ──────────────────────────────────────────────
+info() { echo "  code-style: $*"; }
+warn() { echo "  (skipping $1 — already exists)"; }
+err()  { echo "  ✗ $*"; exit 1; }
+
 # ── auto-detect -y based on git remote ────────────────────
 if [[ "$AUTO_YES" == false && -d .git ]] && command -v git &>/dev/null; then
   REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
@@ -45,11 +50,6 @@ iter() {
     printf '%s\n' "${arr_ref[@]}"
   fi
 }
-
-# ── helpers ──────────────────────────────────────────────
-info() { echo "  code-style: $*"; }
-warn() { echo "  (skipping $1 — already exists)"; }
-err()  { echo "  ✗ $*"; exit 1; }
 
 command -v jq &>/dev/null || err "jq is required"
 

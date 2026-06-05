@@ -3,6 +3,26 @@
 # Interactive for existing projects (prompts before merge), non-interactive for fresh ones.
 # Requires: Bash 4.4+, jq, git (optional but recommended)
 # Usage: bash init.sh [target-dir] [-y|--yes]
+#
+# Local overrides:
+#   Create a .code-style.local file in your project root to persistently
+#   customize behavior. This file is NEVER overwritten by init.sh and is
+#   automatically added to .git/info/exclude (local-only, not tracked).
+#
+#   Supported directives:
+#     ignore_file = .dprint.json             # Skip merging a config file entirely
+#     ignore_script = format                 # Skip setting a specific script
+#     ignore_dep = dprint                    # Skip installing a specific dependency
+#     override = .file.json:{"k": "v"}       # Apply jq expression after merge
+#     override_script = format|oxfmt .       # Override a script (use | as delimiter)
+#
+#   Example .code-style.local:
+#     # Skip dprint entirely (config, scripts, and dependency)
+#     ignore_file = .dprint.json
+#     ignore_dep = dprint
+#     override_script = format|oxfmt .
+#     override_script = format:check|oxfmt --check .
+#     override_script = check|oxlint --type-aware . && oxfmt --check . && tsc --noEmit
 set -euo pipefail
 
 # ── argument parsing ────────────────────────────────────────
@@ -280,6 +300,17 @@ else
   done
 fi
 
+# ── .git/info/exclude (local-only gitignore) ──────────────
+# .code-style.local is user-specific, so it goes in .git/info/exclude
+# instead of .gitignore (which is tracked and shared).
+if [[ -d .git ]]; then
+  EXCLUDE_FILE=".git/info/exclude"
+  EXCLUDE_ENTRY=".code-style.local"
+  if ! grep -qxF "$EXCLUDE_ENTRY" "$EXCLUDE_FILE" 2>/dev/null; then
+    printf '%s\n' "$EXCLUDE_ENTRY" >> "$EXCLUDE_FILE"
+  fi
+fi
+
 # ── git backup (init + stage if no repo exists) ──────────
 if [[ -d .git ]]; then
   GIT_STATE="already initialized"
@@ -333,6 +364,103 @@ prompt_merge() {
     return 1
   fi
   return 0
+}
+
+# ── local overrides ───────────────────────────────────────
+# Users can create .code-style.local to persistently skip files or override settings.
+# This file is NEVER overwritten by init.sh. Add it to .git/info/exclude.
+#
+# Supported directives:
+#   ignore_file = .dprint.json         # Skip merging a config file entirely
+#   ignore_script = format             # Skip setting a specific script
+#   ignore_dep = dprint                # Skip installing a specific dependency
+#   override = .file.json:{"k": "v"}   # Apply jq expression after merge
+#   override_script = format:oxfmt .   # Override a script's command
+LOCAL_IGNORE_FILES=()
+LOCAL_IGNORE_SCRIPTS=()
+LOCAL_IGNORE_DEPS=()
+LOCAL_OVERRIDES=()
+LOCAL_OVERRIDE_SCRIPTS=()
+if [[ -f .code-style.local ]]; then
+  while IFS= read -r line; do
+    # Skip comments and blank lines
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    # Parse: ignore_file = .dprint.json
+    if [[ "$line" =~ ^ignore_file[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+      file_to_ignore="${BASH_REMATCH[1]}"
+      file_to_ignore="${file_to_ignore#"${file_to_ignore%%[![:space:]]*}"}"
+      file_to_ignore="${file_to_ignore%"${file_to_ignore##*[![:space:]]}"}"
+      LOCAL_IGNORE_FILES+=("$file_to_ignore")
+    # Parse: ignore_script = format
+    elif [[ "$line" =~ ^ignore_script[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+      script_to_ignore="${BASH_REMATCH[1]}"
+      script_to_ignore="${script_to_ignore#"${script_to_ignore%%[![:space:]]*}"}"
+      script_to_ignore="${script_to_ignore%"${script_to_ignore##*[![:space:]]}"}"
+      LOCAL_IGNORE_SCRIPTS+=("$script_to_ignore")
+    # Parse: ignore_dep = dprint
+    elif [[ "$line" =~ ^ignore_dep[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+      dep_to_ignore="${BASH_REMATCH[1]}"
+      dep_to_ignore="${dep_to_ignore#"${dep_to_ignore%%[![:space:]]*}"}"
+      dep_to_ignore="${dep_to_ignore%"${dep_to_ignore##*[![:space:]]}"}"
+      LOCAL_IGNORE_DEPS+=("$dep_to_ignore")
+    # Parse: override = .file.json:{"key": "value"}
+    elif [[ "$line" =~ ^override[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+      override_spec="${BASH_REMATCH[1]}"
+      override_spec="${override_spec#"${override_spec%%[![:space:]]*}"}"
+      override_spec="${override_spec%"${override_spec##*[![:space:]]}"}"
+      LOCAL_OVERRIDES+=("$override_spec")
+    # Parse: override_script = format|oxfmt .
+    elif [[ "$line" =~ ^override_script[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+      script_override="${BASH_REMATCH[1]}"
+      script_override="${script_override#"${script_override%%[![:space:]]*}"}"
+      script_override="${script_override%"${script_override##*[![:space:]]}"}"
+      LOCAL_OVERRIDE_SCRIPTS+=("$script_override")
+    fi
+  done < .code-style.local
+fi
+
+# Helper functions
+should_ignore_file() {
+  local file="$1"
+  for ignored in "${LOCAL_IGNORE_FILES[@]}"; do
+    if [[ "$file" == "$ignored" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+should_ignore_script() {
+  local script="$1"
+  for ignored in "${LOCAL_IGNORE_SCRIPTS[@]}"; do
+    if [[ "$script" == "$ignored" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+should_ignore_dep() {
+  local dep="$1"
+  for ignored in "${LOCAL_IGNORE_DEPS[@]}"; do
+    if [[ "$dep" == "$ignored" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+get_script_override() {
+  local script="$1"
+  for override in "${LOCAL_OVERRIDE_SCRIPTS[@]}"; do
+    local override_name=$(echo "$override" | cut -d'|' -f1)
+    local override_cmd=$(echo "$override" | cut -d'|' -f2-)
+    if [[ "$override_name" == "$script" ]]; then
+      echo "$override_cmd"
+      return 0
+    fi
+  done
+  return 1
 }
 
 # ── expected configs (all JSON) ───────────────────────────
@@ -411,6 +539,13 @@ fi
 merge_config() {
   local file="$1" new_json="$2"
 
+  # Check if this file is in the local ignore list
+  if should_ignore_file "$file"; then
+    info "skipping $file (listed in .code-style.local ignore_file)"
+    CONFIGS_SKIPPED+=("$file")
+    return 0  # Not an error, just skipped
+  fi
+
   # If OXC_MODE is "replace", delete existing oxc configs first
   if [[ "$OXC_MODE" == "replace" && ("$file" == ".oxlintrc.json" || "$file" == ".oxfmtrc.json") ]]; then
     rm -f "$file"
@@ -419,6 +554,8 @@ merge_config() {
   if [[ ! -f "$file" ]]; then
     printf '%s\n' "$new_json" > "$file"
     CONFIGS_CREATED+=("$file")
+    # Apply local overrides even for newly created files
+    apply_overrides "$file"
     return 0
   fi
 
@@ -464,7 +601,28 @@ merge_config() {
       ;;
   esac
 
+  # Apply local overrides
+  apply_overrides "$file"
+
   CONFIGS_MERGED+=("$file")
+}
+
+# Helper function to apply local overrides
+apply_overrides() {
+  local file="$1"
+  for override in "${LOCAL_OVERRIDES[@]}"; do
+    override_file=$(echo "$override" | cut -d':' -f1)
+    override_key=$(echo "$override" | cut -d':' -f2-)
+    if [[ "$override_file" == "$file" && -n "$override_key" ]]; then
+      info "applying local override to $file: $override_key"
+      # Parse the override as a jq expression and apply it
+      echo "$override_key" | jq -c '.' > /dev/null 2>&1 || {
+        warn "invalid override syntax in .code-style.local: $override_key"
+        continue
+      }
+      jq --argjson override "$override_key" '. * $override' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+    fi
+  done
 }
 
 for file in "${CONFIG_ORDER[@]}"; do
@@ -479,6 +637,17 @@ else
   SCRIPT_ORDER=(lint lint:fix format format:check typecheck check)
 fi
 
+# Filter out ignored scripts
+FILTERED_SCRIPT_ORDER=()
+for script in "${SCRIPT_ORDER[@]}"; do
+  if ! should_ignore_script "$script"; then
+    FILTERED_SCRIPT_ORDER+=("$script")
+  else
+    info "skipping script $script (listed in .code-style.local ignore_script)"
+  fi
+done
+SCRIPT_ORDER=("${FILTERED_SCRIPT_ORDER[@]}")
+
 declare -A SCRIPT_VALUES
 SCRIPT_VALUES[lint]="oxlint --type-aware ."
 SCRIPT_VALUES[lint:fix]="oxlint --type-aware --fix ."
@@ -486,6 +655,16 @@ SCRIPT_VALUES[format]="oxfmt . && dprint fmt"
 SCRIPT_VALUES[format:check]="oxfmt --check . && dprint check"
 SCRIPT_VALUES[typecheck]="tsc --noEmit"
 SCRIPT_VALUES[check]="oxlint --type-aware . && oxfmt --check . && dprint check && tsc --noEmit"
+
+# Apply script overrides from .code-style.local
+for override in "${LOCAL_OVERRIDE_SCRIPTS[@]}"; do
+  override_name=$(echo "$override" | cut -d'|' -f1)
+  override_cmd=$(echo "$override" | cut -d'|' -f2-)
+  if [[ -n "$override_name" && -n "$override_cmd" ]]; then
+    SCRIPT_VALUES["$override_name"]="$override_cmd"
+    info "overriding script $override_name: $override_cmd"
+  fi
+done
 
 # Track which scripts will be added vs preserved BEFORE the merge
 declare -A PRESERVED_SCRIPT_VALUES
@@ -500,27 +679,19 @@ for script in "${SCRIPT_ORDER[@]}"; do
   fi
 done
 
-# jq: always set canonical scripts (=), they are the definitive commands for this tooling
-if [[ $SKIP_OXC == true ]]; then
-  # Skip oxc scripts, only set dprint/tsc scripts
-  jq '
-    .scripts = .scripts // {} |
-    .scripts.format            = "dprint fmt" |
-    .scripts["format:check"]   = "dprint check" |
-    .scripts.typecheck         = "tsc --noEmit" |
-    .scripts.check             = "dprint check && tsc --noEmit"
-  ' package.json > package.json.tmp && mv package.json.tmp package.json
-else
-  jq '
-    .scripts = .scripts // {} |
-    .scripts.lint              = "oxlint --type-aware ." |
-    .scripts["lint:fix"]       = "oxlint --type-aware --fix ." |
-    .scripts.format            = "oxfmt . && dprint fmt" |
-    .scripts["format:check"]   = "oxfmt --check . && dprint check" |
-    .scripts.typecheck         = "tsc --noEmit" |
-    .scripts.check             = "oxlint --type-aware . && oxfmt --check . && dprint check && tsc --noEmit"
-  ' package.json > package.json.tmp && mv package.json.tmp package.json
-fi
+# Build jq expression dynamically based on SCRIPT_ORDER
+JQ_SCRIPTS='.scripts = .scripts // {}'
+for script in "${SCRIPT_ORDER[@]}"; do
+  value="${SCRIPT_VALUES[$script]}"
+  if [[ "$script" == *:* ]]; then
+    # Script name contains colon, use bracket notation
+    JQ_SCRIPTS+=" | .scripts[\"$script\"] = \"$value\""
+  else
+    JQ_SCRIPTS+=" | .scripts.$script = \"$value\""
+  fi
+done
+
+jq "$JQ_SCRIPTS" package.json > package.json.tmp && mv package.json.tmp package.json
 
 # ── install devDependencies ──────────────────────────────
 NEED=()
@@ -530,6 +701,25 @@ if [[ $SKIP_OXC == true ]]; then
 else
   DEPS_TO_CHECK=(oxlint oxfmt dprint typescript)
 fi
+
+# oxlint-tsgolint is required for --type-aware linting
+if [[ $SKIP_OXC != true ]]; then
+  # Check if any lint/check script uses --type-aware
+  if echo "${SCRIPT_VALUES[lint]} ${SCRIPT_VALUES[lint:fix]} ${SCRIPT_VALUES[check]}" | grep -q -- "--type-aware"; then
+    DEPS_TO_CHECK+=(oxlint-tsgolint)
+  fi
+fi
+
+# Filter out ignored dependencies
+FILTERED_DEPS=()
+for dep in "${DEPS_TO_CHECK[@]}"; do
+  if ! should_ignore_dep "$dep"; then
+    FILTERED_DEPS+=("$dep")
+  else
+    info "skipping dependency $dep (listed in .code-style.local ignore_dep)"
+  fi
+done
+DEPS_TO_CHECK=("${FILTERED_DEPS[@]}")
 
 for dep in "${DEPS_TO_CHECK[@]}"; do
   if jq -e --arg d "$dep" '.devDependencies[$d] // .dependencies[$d]' package.json &>/dev/null; then
@@ -541,7 +731,7 @@ done
 
 if [[ ${#NEED[@]} -gt 0 ]]; then
   $ADD "${NEED[@]}"
-  DEPS_INSTALLED=("${NEED[@]}")
+  DEPS_INSTALLED+=("${NEED[@]}")
   COMMIT_FILES+=("package.json")
 fi
 

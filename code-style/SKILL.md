@@ -14,6 +14,7 @@ Apply these conventions to every TypeScript/JavaScript file.
 - `#private` — truly private fields (not TS `private` keyword)
 - `T` prefix — generic type parameters (`TInput`, `TContext`)
 - **No `I` prefix** for interfaces
+- **Semantic naming**: if a helper is called in two contexts where its meaning differs (e.g. "is this escaped" means "should we open" at one call site and "should we close" at another), split into separate named functions — one per semantic. Linters catch complexity, not semantic conflation.
 
 ## Comments — Very Sparse
 - **Only**: non-trivial logic, external references, security notes, documented trade-offs, TODO/BUG markers
@@ -28,10 +29,21 @@ Apply these conventions to every TypeScript/JavaScript file.
 - Prefer `undefined` over `null`
 - Discriminated unions for exhaustive branching
 - `noUncheckedIndexedAccess` means `arr[0]` is `T | undefined` — always handle
+- `readonly` on class fields that are never reassigned after construction
+- Prefer `String#replaceAll()` over `.replace(/pattern/g, …)` for literal string replacements
+- Avoid stateful `RegExp` with `g`/`y` flags in reusable matchers — `lastIndex` mutates across `.test()` calls. Reset to `0` before each call, or strip the flags
+
+## Functions
+- Max cognitive complexity per function: 15. If flagged, decompose into smaller helpers.
+- Extract compound conditions into named predicate functions — one name per semantic.
+- Pass shared mutable state through a context object rather than threading many parameters.
+- Prefer early returns over deep nesting.
 
 ## Imports & Exports
 - Named exports only — **no default exports**
 - No `export *` barrel re-exports at domain boundaries
+- Use `node:` prefix for Node.js built-in modules (`node:fs`, `node:path`, `node:url`, etc.)
+- ESM projects (`"type": "module"`): `__dirname` / `__filename` are unavailable — derive via `import.meta.url` + `fileURLToPath` / `dirname` from `node:url` / `node:path`
 - Group: node built-ins → npm packages → workspace → relative
 - Sort alphabetically within groups
 - Keep `index.ts` to re-exports only — no implementation
@@ -41,12 +53,14 @@ Apply these conventions to every TypeScript/JavaScript file.
 - Zod schema validation at all boundaries (env, requests, config)
 - Throw on unexpected failures — don't silently swallow
 - Use typed error classes for distinguishable failure modes
+- Use specific error classes (`TypeError`, `RangeError`) for type/value mismatches — not generic `Error`
 - `no-console` is a lint error — structured logging in production code
 
-## File Structure
+## Testing
 - Colocate tests: `file.test.ts` next to `file.ts`
 - Colocate types alongside their implementation
 - Shared boundary types in `types.ts`
+- **State transitions**: when code tracks state via boolean flags (`isX`, `inX`, `hasX`), write tests that target the transitions, not just the states. Bugs hide at boundaries — test with edge-case values at every toggle point.
 
 ## Formatting (Oxfmt)
 - Single quotes · no semicolons · trailing commas es5

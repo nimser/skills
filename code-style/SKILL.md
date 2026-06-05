@@ -61,7 +61,9 @@ Apply these conventions to every TypeScript/JavaScript file.
 
 ## Scripts (run via package manager)
 
-These scripts are set up by `code-style/init.sh` and installed as devDependencies (`oxlint`, `oxfmt`, `dprint`, `typescript`).
+These scripts are set up by `code-style/init.sh` and installed as devDependencies (`oxlint`, `oxfmt`, `dprint`, `typescript`, `oxlint-tsgolint`).
+
+> **Note:** `oxlint-tsgolint` is required for `--type-aware` linting. It is automatically installed when lint scripts use `--type-aware`.
 
 | Script           | Command                                              | Purpose                            |
 | ---------------- | ---------------------------------------------------- | ---------------------------------- |
@@ -79,6 +81,52 @@ These scripts are set up by `code-style/init.sh` and installed as devDependencie
 - **Bypass** (escape hatch): `git commit --no-verify`
 - The hook is interactive during `init.sh` — it asks on existing projects, auto-installs on nimser repos and fresh projects
 - If a non-code-style pre-commit hook already exists, it is preserved (never overwritten)
+
+### Local overrides
+
+Create a `.code-style.local` file in your project root to persistently customize behavior. This file is **never overwritten** by `init.sh` and is automatically added to `.git/info/exclude` (local-only, not tracked in the repo).
+
+**Supported directives:**
+
+- `ignore_file` — skip merging a specific config file entirely
+- `ignore_script` — skip setting a specific script in package.json
+- `ignore_dep` — skip installing a specific dependency
+- `override` — apply jq expressions to modify a config after merging
+- `override_script` — override a script's command (use `|` as delimiter since `:` appears in script names)
+
+**Example: completely avoid dprint**
+
+```bash
+# .code-style.local
+
+# Don't create local dprint config
+ignore_file = .dprint.json
+
+# Don't install dprint dependency
+ignore_dep = dprint
+
+# Override scripts that reference dprint to use oxfmt only
+override_script = format|oxfmt .
+override_script = format:check|oxfmt --check .
+override_script = check|oxlint --type-aware . && oxfmt --check . && tsc --noEmit
+```
+
+**Other examples:**
+
+```bash
+# Override specific config settings after merge
+override = .oxfmtrc.json:{"printWidth": 120}
+override = .oxlintrc.json:{"rules": {"no-console": "warn"}}
+
+# Skip tsconfig entirely
+ignore_file = tsconfig.json
+
+# Skip lint scripts
+ignore_script = lint
+ignore_script = lint:fix
+```
+
+The override values are applied using jq's recursive merge (`*` operator), so you can selectively revert specific keys without losing the rest of the skill's config.
 
 ### Agent workflow
 

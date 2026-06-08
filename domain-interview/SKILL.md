@@ -1,6 +1,7 @@
 ---
 name: domain-interview
 description: Interview the user on their understanding of project domain, architecture, and inner workings to surface divergences between their mental model and the codebase. Use when user wants to validate their understanding, audit documentation accuracy, find undocumented behavior, or mentions "domain interview", "divergence check", or "audit understanding".
+note_for_the_user: This skill yields best benefit if run with thinking visibility switched off so you answer from your very own mental model and don't get spoiled answers (you can temporaly toggle in on as need be).
 ---
 
 # Domain Interview
@@ -12,9 +13,10 @@ Relentlessly interview the user about every aspect of the project — domain con
 Build your own understanding from these before interviewing:
 
 1. **`./src`** — actual implementation
-2. **`./docs/adrs`** — architecture decision records
-3. **`./docs`** — public-facing documentation (guides, API docs, how-tos)
-4. **`./private/openspec`** — detailed author specification (domain model, future plans, ubiquitous language)
+2. `README.md` — public README
+3. **`./docs/adrs`** — architecture decision records
+4. **`./docs`** — public-facing documentation (guides, API docs, how-tos)
+5. **`./private/openspec`** — detailed author specification (look at all `design.md`, `proposal.md`, and `spec.md` anywhere in the file tree plus any doc directly at L1 of the tree).
 
 Read broadly across all four before starting. Your understanding must span spec, decisions, docs, **and** code.
 

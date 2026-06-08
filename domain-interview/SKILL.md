@@ -60,6 +60,7 @@ Then work with the user to resolve:
 - Never auto-edit documentation, specs, or code as part of this skill.
 - When proposing edits, specify the file path and the exact change.
 - Group related edits into a single proposal when they address the same divergence.
+- **Commit as you go.** After the user approves and you've applied an edit (or a grouped batch), immediately stage, commit, and push the change. Load `auto-commit-and-push` and `commit-style-fun` (or any available `commit-style*` skill) to handle staging, message formatting, and non-interactive push. Do not wait until the end of the interview to commit.
 
 ## Session Output
 
@@ -68,7 +69,7 @@ At the end of the interview (or when the user stops), produce a summary:
 1. **Topics covered** — list of areas discussed
 2. **Divergences found** — each with: topic, what user said, what sources say, resolution
 3. **Gaps identified** — undocumented areas that need documentation
-4. **Edits made** — changes the user approved (with file paths)
+4. **Edits made** — changes the user approved (with file paths; each already committed and pushed as they were applied)
 5. **Open questions** — anything unresolved that needs follow-up
 
 See [REFERENCE.md](REFERENCE.md) for the divergence taxonomy and interview heuristics.

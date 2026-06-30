@@ -51,6 +51,7 @@ Capture current viewport and return temporary file path. Use this to visually in
 **IMPORTANT**: Use this tool when the user wants to select specific DOM elements on the page. This launches an interactive picker that lets the user click elements to select them. The user can select multiple elements (Cmd/Ctrl+Click) and press Enter when done. The tool returns CSS selectors for the selected elements.
 
 Common use cases:
+
 - User says "I want to click that button" → Use this tool to let them select it
 - User says "extract data from these items" → Use this tool to let them select the elements
 - When you need specific selectors but the page structure is complex or ambiguous
@@ -165,11 +166,11 @@ Extract structured state in one call:
 When interacting with complex or recurring applications (like Single Page Applications, nested forms, or accordions), **don't guess selectors on every run**. Instead, create and use a static mapping file.
 
 1. **Check for existing maps first:**
-   Before running exploratory DOM scripts, look for `.opencode/browser-mappings.json`.
+   Before running exploratory DOM scripts, look for `.agents/artifacts/browser-mappings.json`.
    If it exists, read it and check if the current URL (domain or path) matches any top-level key to find the appropriate exact CSS selectors.
 
 2. **Create a map if missing:**
-   If the user asks you to interact with a new complex workflow, write a script to explore the DOM (expanding accordions, opening modals sequentially), extract labels/IDs, and append the JSON schema to `.opencode/browser-mappings.json` using the domain or URL pattern as the top-level key. 
+   If the user asks you to interact with a new complex workflow, write a script to explore the DOM (expanding accordions, opening modals sequentially), extract labels/IDs, and append the JSON schema to `.agents/artifacts/browser-mappings.json` using the domain or URL pattern as the top-level key.
 
 3. **Self-Healing:**
    Websites change. If a selector from the mapping file fails (element not found), assume the UI was updated. Re-run an exploratory script to find the new selectors and update the JSON mapping file automatically.

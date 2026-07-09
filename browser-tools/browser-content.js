@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import puppeteer from "puppeteer-core";
+import { authenticatePage } from "./proxy-util.js";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
@@ -42,6 +43,7 @@ if (!p) {
 	process.exit(1);
 }
 
+await authenticatePage(p);
 await Promise.race([
 	p.goto(url, { waitUntil: "networkidle2" }),
 	new Promise((r) => setTimeout(r, 10000)),

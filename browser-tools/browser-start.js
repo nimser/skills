@@ -3,6 +3,7 @@
 import { spawn, execSync } from "node:child_process";
 import puppeteer from "puppeteer-core";
 import { readFileSync } from "node:fs";
+import { getProxyConfig } from "./proxy-util.js";
 
 const useProfile = process.argv.includes("--profile");
 
@@ -70,6 +71,12 @@ function getBrowserFlags(browserType) {
 		"--no-first-run",
 		"--no-default-browser-check",
 	];
+
+	const proxy = getProxyConfig();
+	if (proxy) {
+		baseFlags.push(`--proxy-server=${proxy.serverFlag}`);
+		console.log(`Using proxy: ${proxy.host}:${proxy.port} (auth handled per-page via page.authenticate)`);
+	}
 	
 	if (process.platform === "linux") {
 		const commonLinuxFlags = [

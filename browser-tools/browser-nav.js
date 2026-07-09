@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import puppeteer from "puppeteer-core";
+import { authenticatePage } from "./proxy-util.js";
 
 const args = process.argv.slice(2);
 const newTab = args.includes("--new");
@@ -30,10 +31,12 @@ const b = await Promise.race([
 
 if (newTab) {
 	const p = await b.newPage();
+	await authenticatePage(p);
 	await p.goto(url, { waitUntil: "domcontentloaded" });
 	console.log("✓ Opened:", url);
 } else {
 	const p = (await b.pages()).at(-1);
+	await authenticatePage(p);
 	await p.goto(url, { waitUntil: "domcontentloaded" });
 	if (reload) {
 		await p.reload({ waitUntil: "domcontentloaded" });

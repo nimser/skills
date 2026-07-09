@@ -16,6 +16,33 @@ Chrome DevTools Protocol tools for agent-assisted web automation. These tools co
 
 Launch Chrome with remote debugging on `:9222`. Use `--profile` to preserve user's authentication state.
 
+**Note:** `browser-start.js` reuses an already-running instance on `:9222` if one exists (see "Check if already running" in the script). If you need to switch a running session onto/off the proxy, kill the existing Chrome process first (`pkill -f remote-debugging-port=9222` or similar) so it relaunches with the current `AGENT_HTTPS_PROXY` state.
+
+## Proxy Support (optional)
+
+Browsing can be routed through an HTTP(S) proxy via the `AGENT_HTTPS_PROXY` env var, set in your own environment however you manage secrets:
+
+```bash
+export AGENT_HTTPS_PROXY="https://user:pass@host:port"
+```
+
+This single var is the full proxy URL with inline credentials. When set:
+
+- `browser-start.js` launches Chrome with `--proxy-server=<host:port>` (credentials stripped — Chrome's flag doesn't support inline auth).
+- `browser-nav.js` and `browser-content.js` call `page.authenticate()` on every navigation to answer the proxy's 407 challenge automatically.
+- No SOCKS5 needed — a plain HTTP/HTTPS proxy is sufficient for both Chrome and curl.
+- The devcontainer's `--net=host` is unrelated to this — it just shares the host's network namespace; routing traffic through an upstream HTTP(S) proxy works the same as on the host, no extra container config required.
+
+**Verify the proxy is actually live before relying on it** — don't assume traffic is flowing through it just because the env var is set:
+
+```bash
+{baseDir}/browser-proxy-check.js
+```
+
+This curls `https://api.ipify.org/` through `AGENT_HTTPS_PROXY`, prints the exit IP, fails if `AGENT_HTTPS_PROXY` is unset/invalid or the curl fails, and appends each check to a small history log (`../../artifacts/proxy-ip-history.log`, tab-separated `timestamp\tip`) for later reference. Run it once before a session that relies on the proxy — not just when things seem broken.
+
+If Chrome was started without `AGENT_HTTPS_PROXY` set (or the var changed since), restart it (see note above) before navigating — the proxy flag is baked in at process launch.
+
 ## Navigate
 
 ```bash

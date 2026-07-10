@@ -43,6 +43,18 @@ This curls `https://api.ipify.org/` through `AGENT_HTTPS_PROXY`, prints the exit
 
 If Chrome was started without `AGENT_HTTPS_PROXY` set (or the var changed since), restart it (see note above) before navigating — the proxy flag is baked in at process launch.
 
+## Proxied Session Bootstrap (logged-in sites)
+
+For any logged-in workflow that must go through the residential proxy (account-bound dashboards, social sites), use the one-shot bootstrap instead of wiring the steps by hand:
+
+```bash
+{baseDir}/browser-session-start.sh --url <URL> [--proxy-gopass <path>] [--minutes N] [--no-proxy]
+```
+
+It sets `AGENT_HTTPS_PROXY` fresh from gopass (default: dataimpulse **sticky** residential — stable exit IP per session, better for logged-in sites), verifies it via `browser-proxy-check.js` (logs the exit IP), restarts Chrome so the proxy flag binds, relaunches with `--profile` (logins persist), navigates to `--url`, and starts a wall-clock guard (`session-guard.js`, default 25 min). **Login is always manual** — it never fills credentials. Report the exit IP to the user, then check for a login form.
+
+Site skills wrap this. Before every browser-tools action in such a session, run `{baseDir}/session-guard.js check`; run `stop` at the end.
+
 ## Navigate
 
 ```bash

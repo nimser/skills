@@ -16,44 +16,37 @@ Chrome DevTools Protocol tools for agent-assisted web automation. These tools co
 
 Launch Chrome with remote debugging on `:9222`. Use `--profile` to preserve user's authentication state.
 
-**Note:** `browser-start.js` reuses an already-running instance on `:9222` if one exists (see "Check if already running" in the script). If you need to switch a running session onto/off the proxy, kill the existing Chrome process first (`pkill -f remote-debugging-port=9222` or similar) so it relaunches with the current `AGENT_HTTPS_PROXY` state.
+**Note:** reuses a running `:9222` instance if one exists. To change proxy state, kill it first (`pkill -f remote-debugging-port=9222`) so it relaunches with the current `AGENT_HTTPS_PROXY`.
 
 ## Proxy Support (optional)
 
-Browsing can be routed through an HTTP(S) proxy via the `AGENT_HTTPS_PROXY` env var, set in your own environment however you manage secrets:
+Set `AGENT_HTTPS_PROXY` to a full proxy URL with inline credentials to route browsing through it:
 
 ```bash
 export AGENT_HTTPS_PROXY="https://user:pass@host:port"
 ```
 
-This single var is the full proxy URL with inline credentials. When set:
+When set: `browser-start.js` passes `--proxy-server=<host:port>` (credentials stripped — Chrome's flag has no inline auth); `browser-nav.js`/`browser-content.js` call `page.authenticate()` per navigation to answer the 407 challenge. Plain HTTP(S) suffices; no SOCKS5. The flag binds at launch, so restart Chrome after setting/changing the var.
 
-- `browser-start.js` launches Chrome with `--proxy-server=<host:port>` (credentials stripped — Chrome's flag doesn't support inline auth).
-- `browser-nav.js` and `browser-content.js` call `page.authenticate()` on every navigation to answer the proxy's 407 challenge automatically.
-- No SOCKS5 needed — a plain HTTP/HTTPS proxy is sufficient for both Chrome and curl.
-- The devcontainer's `--net=host` is unrelated to this — it just shares the host's network namespace; routing traffic through an upstream HTTP(S) proxy works the same as on the host, no extra container config required.
-
-**Verify the proxy is actually live before relying on it** — don't assume traffic is flowing through it just because the env var is set:
+Verify it's live before relying on it:
 
 ```bash
 {baseDir}/browser-proxy-check.js
 ```
 
-This curls `https://api.ipify.org/` through `AGENT_HTTPS_PROXY`, prints the exit IP, fails if `AGENT_HTTPS_PROXY` is unset/invalid or the curl fails, and appends each check to a small history log (`../../artifacts/proxy-ip-history.log`, tab-separated `timestamp\tip`) for later reference. Run it once before a session that relies on the proxy — not just when things seem broken.
-
-If Chrome was started without `AGENT_HTTPS_PROXY` set (or the var changed since), restart it (see note above) before navigating — the proxy flag is baked in at process launch.
+Curls `https://api.ipify.org/` through the proxy, prints the exit IP, fails if the var is unset/invalid or curl fails, and appends `timestamp\tip` to `../../artifacts/proxy-ip-history.log`.
 
 ## Proxied Session Bootstrap (logged-in sites)
 
-For any logged-in workflow that must go through the residential proxy (account-bound dashboards, social sites), use the one-shot bootstrap instead of wiring the steps by hand:
+For logged-in workflows through the residential proxy (account-bound dashboards, social sites), use the one-shot bootstrap:
 
 ```bash
 {baseDir}/browser-session-start.sh --url <URL> [--proxy-gopass <path>] [--minutes N] [--no-proxy]
 ```
 
-It sets `AGENT_HTTPS_PROXY` fresh from gopass (default: dataimpulse **sticky** residential — stable exit IP per session, better for logged-in sites), verifies it via `browser-proxy-check.js` (logs the exit IP), restarts Chrome so the proxy flag binds, relaunches with `--profile` (logins persist), navigates to `--url`, and starts a wall-clock guard (`session-guard.js`, default 25 min). **Login is always manual** — it never fills credentials. Report the exit IP to the user, then check for a login form.
+It sets `AGENT_HTTPS_PROXY` fresh from gopass (default: dataimpulse sticky residential — stable exit IP per session), verifies via `browser-proxy-check.js`, restarts Chrome so the flag binds, relaunches with `--profile` (logins persist), navigates to `--url`, and starts a guard (`session-guard.js`, default 25 min). **Login is always manual.** Report the exit IP, then check for a login form.
 
-Site skills wrap this. Before every browser-tools action in such a session, run `{baseDir}/session-guard.js check`; run `stop` at the end.
+Site skills wrap this. Before every browser-tools action, run `{baseDir}/session-guard.js check`; run `stop` at the end.
 
 ## Navigate
 

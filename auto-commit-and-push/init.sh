@@ -21,6 +21,7 @@ fi
 gh repo deploy-key add "${KEY_PATH}.pub" --allow-write --title "opencode Agent Deploy Key" 2>/dev/null || true
 echo "[auto-commit-and-push] Deploy key added to GitHub."
 
-# 4. Configure git to use deploy key
-git config core.sshCommand "ssh -i $KEY_PATH -F /dev/null"
+# 4. Configure git to use deploy key.
+# Don't use $KEY_PATH here so it's re-expanded by git each time to match current environment
+git config core.sshCommand 'ssh -i $HOME/.ssh/agent_deploy_key -F /dev/null'
 echo "[auto-commit-and-push] Git configured to use deploy key."

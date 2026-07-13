@@ -47,6 +47,14 @@ fi
 GH_REPO="$(echo "$REMOTE_URL" \
   | sed -E 's#^[a-zA-Z]+://##; s#^[^@]*@##; s#^[^:/]+[:/]##; s#\.git$##')"
 
+# Identify *which* machine/workspace this key belongs to, for the GitHub
+# deploy-key title. $HOME/.ssh is not persisted across devcontainer rebuilds
+# (and multiple devpod workspaces can bind-mount the same repo concurrently),
+# so every rebuild mints a brand-new keypair. Plain `hostname` inside a
+# container is usually just a random container ID and can't tell workspaces
+# apart, so prefer devpod's own workspace identifier when present.
+MACHINE_ID="${DEVPOD_WORKSPACE_UID:-${DEVPOD_WORKSPACE_ID:-$(hostname)}}"
+
 # --- 3. Add deploy key to GitHub (idempotent, errors are NOT swallowed) -----
 PUBKEY_CONTENT="$(awk '{print $1, $2}' "${KEY_PATH}.pub")"
 EXISTING_KEYS="$(GITHUB_TOKEN='' gh repo deploy-key list -R "$GH_REPO" 2>/dev/null | awk -F'\t' '{print $4}')"
@@ -55,7 +63,7 @@ if echo "$EXISTING_KEYS" | grep -qF "$PUBKEY_CONTENT"; then
   echo "[auto-commit-and-push] Deploy key already registered on ${GH_REPO}."
 else
   if ! ADD_OUTPUT="$(GITHUB_TOKEN='' gh repo deploy-key add "${KEY_PATH}.pub" --allow-write \
-      --title "opencode Agent Deploy Key ($(hostname):${REPO_SLUG})" -R "$GH_REPO" 2>&1)"; then
+      --title "opencode Agent Deploy Key (${MACHINE_ID}:${REPO_SLUG})" -R "$GH_REPO" 2>&1)"; then
     echo "[auto-commit-and-push] FAILED to add deploy key to ${GH_REPO}:" >&2
     echo "$ADD_OUTPUT" >&2
     exit 1

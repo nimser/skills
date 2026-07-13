@@ -54,16 +54,31 @@ GH_REPO="$(echo "$REMOTE_URL" \
 # container is usually just a random container ID and can't tell workspaces
 # apart, so prefer devpod's own workspace identifier when present.
 MACHINE_ID="${DEVPOD_WORKSPACE_UID:-${DEVPOD_WORKSPACE_ID:-$(hostname)}}"
+KEY_TITLE="opencode Agent Deploy Key (${MACHINE_ID}:${REPO_SLUG})"
 
 # --- 3. Add deploy key to GitHub (idempotent, errors are NOT swallowed) -----
+# Also prune any *stale* key still registered under this exact same
+# workspace/repo title but with different key material: since ~/.ssh isn't
+# persisted across devcontainer rebuilds, a rebuilt workspace regenerates a
+# brand-new keypair every time yet keeps the same $DEVPOD_WORKSPACE_UID, so
+# without pruning, GitHub would accumulate one dead key per rebuild forever.
 PUBKEY_CONTENT="$(awk '{print $1, $2}' "${KEY_PATH}.pub")"
-EXISTING_KEYS="$(GITHUB_TOKEN='' gh repo deploy-key list -R "$GH_REPO" 2>/dev/null | awk -F'\t' '{print $4}')"
+EXISTING_KEYS_JSON="$(GITHUB_TOKEN='' gh repo deploy-key list -R "$GH_REPO" --json id,title,key 2>/dev/null || echo '[]')"
 
-if echo "$EXISTING_KEYS" | grep -qF "$PUBKEY_CONTENT"; then
+if echo "$EXISTING_KEYS_JSON" | jq -e --arg key "$PUBKEY_CONTENT" 'any(.[]; .key == $key)' >/dev/null; then
   echo "[auto-commit-and-push] Deploy key already registered on ${GH_REPO}."
 else
+  STALE_IDS="$(echo "$EXISTING_KEYS_JSON" | jq -r --arg title "$KEY_TITLE" '.[] | select(.title == $title) | .id')"
+  for stale_id in $STALE_IDS; do
+    if GITHUB_TOKEN='' gh repo deploy-key delete "$stale_id" -R "$GH_REPO" 2>&1; then
+      echo "[auto-commit-and-push] Pruned stale deploy key ${stale_id} (same workspace, old keypair) from ${GH_REPO}."
+    else
+      echo "[auto-commit-and-push] WARNING: failed to prune stale deploy key ${stale_id} from ${GH_REPO}." >&2
+    fi
+  done
+
   if ! ADD_OUTPUT="$(GITHUB_TOKEN='' gh repo deploy-key add "${KEY_PATH}.pub" --allow-write \
-      --title "opencode Agent Deploy Key (${MACHINE_ID}:${REPO_SLUG})" -R "$GH_REPO" 2>&1)"; then
+      --title "$KEY_TITLE" -R "$GH_REPO" 2>&1)"; then
     echo "[auto-commit-and-push] FAILED to add deploy key to ${GH_REPO}:" >&2
     echo "$ADD_OUTPUT" >&2
     exit 1

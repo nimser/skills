@@ -33,5 +33,6 @@ EOF
 ### 2. Handle failures (only if step 1 fails)
 
 - **Pre-commit hook rejection:** follow `{baseDir}/../pre-commit-failure/SKILL.md`. Never modify lint config, suppress rules, or bypass hooks.
-- **SSH / auth error** (`Permission denied`, `publickey`, `Host key verification failed`): re-run `init.sh`, retry step 1 **once**, then inform the user if it still fails.
+- **SSH / auth error** (`Permission denied`, `publickey`, `Host key verification failed`, `agent refused operation`, `No such file or directory` for an identity file): run `bash {baseDir}/init.sh` — it is bundled **in this skill's directory**, never search the filesystem for it. It mints a per-repo deploy key, registers it via `gh`, and sets `core.sshCommand`. Deploy keys live in `~/.ssh`, which is wiped on container rebuild — a dead-key `core.sshCommand` after a rebuild is the *expected* failure mode, not a YubiKey problem. Retry step 1 **once**, then inform the user if it still fails.
+- **Signing error** (`No private key found for public key`, `failed to write commit object`): this is commit *signing*, not push auth — `init.sh` won't help. The signing key comes from the user's agent/YubiKey; report to the user rather than improvising key overrides without asking.
 - **Non-auth error** (e.g. diverged remote): follow Force Push Safety above.

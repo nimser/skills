@@ -14,7 +14,8 @@ export function getProxyConfig() {
 	try {
 		url = new URL(raw);
 	} catch {
-		console.error("✗ AGENT_HTTPS_PROXY is set but not a valid URL:", raw);
+		// Never echo the raw value — it contains credentials.
+		console.error("✗ AGENT_HTTPS_PROXY is set but not a valid URL (value redacted; rebuild it with dataimpulse-proxy-url)");
 		return null;
 	}
 

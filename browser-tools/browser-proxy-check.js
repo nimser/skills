@@ -19,8 +19,8 @@ const HISTORY_FILE = join(__dirname, "..", "..", "artifacts", "proxy-ip-history.
 
 const proxy = getProxyConfig();
 if (!proxy) {
-	console.error("✗ AGENT_HTTPS_PROXY is not set. Set it to a full proxy URL before running this check:");
-	console.error('  export AGENT_HTTPS_PROXY="https://user:pass@host:port"');
+	console.error("✗ AGENT_HTTPS_PROXY is not set. Build it (credentials from gopass, never displayed):");
+	console.error('  export AGENT_HTTPS_PROXY="$(dataimpulse-proxy-url --print --countries fr)"');
 	process.exit(1);
 }
 

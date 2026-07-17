@@ -20,14 +20,14 @@ Launch Chrome with remote debugging on `:9222`. Use `--profile` to preserve user
 
 ## Proxy Support (optional)
 
-`AGENT_HTTPS_PROXY` holds a full proxy URL with inline credentials. **Never print, echo, or log its value.** Build it with the gopass-backed generator (chezmoi-managed, in PATH) and capture via command substitution only:
+`AGENT_HTTPS_PROXY` holds a full proxy URL with inline credentials. **Never print, echo, or log its value.** Build it with a proxy-URL builder command (`AGENT_PROXY_URL_CMD`, default `dataimpulse-proxy-url` — a private dotfiles script, **not shipped with this skill**; see `{baseDir}/PROXY.md` for the contract and a reference implementation) and capture via command substitution only:
 
 ```bash
 export AGENT_HTTPS_PROXY="$(dataimpulse-proxy-url --print --countries fr)"  # sticky FR exit, 60min rotation
 dataimpulse-proxy-url --help   # --rotating, --session-id, --ttl, --state, --city, --list-countries, --entry
 ```
 
-Default (no `--countries`) uses the DataImpulse dashboard-default country. `--rotating` (new IP per request) is for stateless scraping only — never for logged-in sessions. Report only host/port/countries and the exit IP to the user; run `gopass show` only captured into a variable, never bare.
+Default (no `--countries`) uses the provider's dashboard-default country. `--rotating` (new IP per request) is for stateless scraping only — never for logged-in sessions. Report only host/port/countries and the exit IP to the user; run `gopass show` only captured into a variable, never bare.
 
 Env vars do **not** persist across separate bash tool calls: export and use `AGENT_HTTPS_PROXY` in the *same* call as `browser-start.js`/`browser-nav.js`/`browser-content.js`, otherwise Chrome silently launches without the proxy.
 
@@ -51,7 +51,7 @@ For logged-in workflows through the residential proxy (account-bound dashboards,
 
 It sets `AGENT_HTTPS_PROXY` fresh via `dataimpulse-proxy-url` (gopass-backed; proxy flags passed through — default: sticky residential, 60-min rotation interval, dashboard-default country), verifies via `browser-proxy-check.js`, restarts Chrome so the flag binds, relaunches with `--profile` (logins persist), navigates to `--url`, and starts a guard (`session-guard.js`, default 25 min). **Login is always manual.** Report the exit IP, then check for a login form.
 
-Site skills wrap this and pass their own targeting (e.g. `--countries fr`). Before every browser-tools action, run `{baseDir}/session-guard.js check`; run `stop` at the end.
+Site-specific skills can wrap this and pass their own targeting (e.g. `--countries fr`). Before every browser-tools action, run `{baseDir}/session-guard.js check`; run `stop` at the end.
 
 ## Navigate
 

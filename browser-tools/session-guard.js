@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Wall-clock guard for proxied browser-tools sessions (logged-in site
-// browsing, etc.). Enforces a hard time budget so a stuck/failing agent can't
+// workflows). Enforces a hard time budget so a stuck/failing agent can't
 // keep hammering a logged-in site while the user is AFK — that's exactly what
 // gets an account flagged or an IP banned.
 //

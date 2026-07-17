@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Generic proxied browser-session bootstrap, reused by every logged-in site
-# workflow (logged-in site
-# work, and future ones). It:
+# Generic proxied browser-session bootstrap, reused by logged-in site
+# workflows. It:
 #   1. sets AGENT_HTTPS_PROXY fresh via dataimpulse-proxy-url (gopass-backed,
 #      never reuses a stale env var, credentials never displayed),
 #   2. verifies the proxy is live and logs the exit IP,
@@ -19,11 +18,13 @@
 #                            [--session-id X] [--ttl N] [--entry gopass/path]
 #                            [--minutes N] [--no-proxy]
 #
-# Proxy flags are passed through to dataimpulse-proxy-url (in PATH,
-# chezmoi-managed). Defaults: sticky port with 60-min rotation interval,
-# dashboard-default country. Site skills pass their own --countries (e.g.
-# --countries fr). Avoid --rotating for logged-in sites:
-# a new IP per request will invalidate the session.
+# Proxy flags are passed through to the proxy-URL builder command
+# (AGENT_PROXY_URL_CMD, default: dataimpulse-proxy-url — a private dotfiles
+# script; see PROXY.md for the contract and a reference implementation).
+# Defaults: sticky port with 60-min rotation interval, provider-default
+# country. Site skills pass their own --countries (e.g. --countries fr).
+# Avoid --rotating for logged-in sites: a new IP per request will
+# invalidate the session.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -46,10 +47,11 @@ done
 [[ -n "$URL" ]] || { echo "✗ --url is required" >&2; exit 1; }
 
 if [[ "$USE_PROXY" == 1 ]]; then
-  command -v dataimpulse-proxy-url >/dev/null 2>&1 \
-    || { echo "✗ dataimpulse-proxy-url not found in PATH (chezmoi-managed, expected in ~/.local/bin)" >&2; exit 1; }
-  echo "→ Building proxy URL via dataimpulse-proxy-url (credentials from gopass, never displayed)..."
-  AGENT_HTTPS_PROXY="$(dataimpulse-proxy-url --print ${PROXY_ARGS[@]+"${PROXY_ARGS[@]}"})"
+  PROXY_CMD="${AGENT_PROXY_URL_CMD:-dataimpulse-proxy-url}"
+  command -v "$PROXY_CMD" >/dev/null 2>&1 \
+    || { echo "✗ proxy builder '$PROXY_CMD' not found in PATH — see PROXY.md for the expected contract" >&2; exit 1; }
+  echo "→ Building proxy URL via $PROXY_CMD (credentials never displayed)..."
+  AGENT_HTTPS_PROXY="$("$PROXY_CMD" --print ${PROXY_ARGS[@]+"${PROXY_ARGS[@]}"})"
   export AGENT_HTTPS_PROXY
   echo "→ Verifying proxy..."
   ./browser-proxy-check.js

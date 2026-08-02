@@ -11,7 +11,17 @@ Forces `git push` through a dedicated Deploy Key (bypassing `SSH_AUTH_SOCK`/hard
 
 **Try first, set up only on failure.** Assume `init.sh` already configured the deploy key, GitHub registration, and `core.sshCommand`. Skip straight to committing and pushing; only run setup if something breaks.
 
-### 1. Stage, commit, and push (happy path)
+### 1. Signing pre-flight (before touching the index)
+
+Run it first, every time — a missing signing key otherwise only surfaces after the commit fails:
+
+```bash
+bash {baseDir}/preflight.sh
+```
+
+Exit 0 → proceed to step 2. Exit 1 → **stop**: nothing is staged, nothing is committed. Relay the script's message to the user (plug in / unlock the YubiKey) and retry the pre-flight once they confirm. Never work around it with another key or by disabling signing.
+
+### 2. Stage, commit, and push (happy path)
 
 **Force Push Safety:** never `--force`; use `--force-with-lease` and only with explicit user consent. If `--force-with-lease` fails (diverged remote), don't fall back to `--force` — tell the user.
 
@@ -30,9 +40,9 @@ Co-authored-by: Claude <noreply@anthropic.com>
 EOF
 ```
 
-### 2. Handle failures (only if step 1 fails)
+### 3. Handle failures (only if step 2 fails)
 
 - **Pre-commit hook rejection:** follow `{baseDir}/../pre-commit-failure/SKILL.md`. Never modify lint config, suppress rules, or bypass hooks.
-- **SSH / auth error** (`Permission denied`, `publickey`, missing identity file, `agent refused operation`): run `bash {baseDir}/init.sh` (bundled here — don't search for it). Expected after container rebuilds (~/.ssh wiped). Retry step 1 **once**, then inform the user.
-- **Signing error** (`No private key found for public key`): commit *signing*, not push auth — init.sh won't help; report to user, don't improvise key overrides.
+- **SSH / auth error** (`Permission denied`, `publickey`, missing identity file, `agent refused operation`): run `bash {baseDir}/init.sh` (bundled here — don't search for it). Expected after container rebuilds (~/.ssh wiped). Retry step 2 **once**, then inform the user.
+- **Signing error** (`No private key found for public key`): the pre-flight should have caught this; commit *signing*, not push auth — init.sh won't help. Re-run the step 1 pre-flight, report its message to the user, don't improvise key overrides.
 - **Non-auth error** (e.g. diverged remote): follow Force Push Safety above.

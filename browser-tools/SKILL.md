@@ -56,8 +56,8 @@ Site-specific skills can wrap this and pass their own targeting (e.g. `--countri
 ## Session Guard (automatic)
 
 The pre-flight is not typed by hand. The `browser-guard` pi extension
-(`/workspaces/metagrowth/extensions/browser-guard.ts`, loaded with
-`pi -e /workspaces/metagrowth/extensions/browser-guard.ts`) intercepts any bash
+(`/workspaces/metagrowth/extensions/browser-guard.ts`, auto-discovered through
+the symlink in `~/.pi/agent/extensions/`, so every session has it) intercepts any bash
 command that runs `browser-nav.js`, `browser-eval.js`, `browser-content.js`,
 `browser-screenshot.js`, `browser-click-xy.js`, `browser-cookies.js`,
 `browser-pick.js` or `browser-hn-scraper.js` and, before it executes:

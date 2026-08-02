@@ -51,7 +51,32 @@ For logged-in workflows through the residential proxy (account-bound dashboards,
 
 It sets `AGENT_HTTPS_PROXY` fresh via `dataimpulse-proxy-url` (gopass-backed; proxy flags passed through — default: sticky residential, 60-min rotation interval, dashboard-default country), verifies via `browser-proxy-check.js`, restarts Chrome so the flag binds, relaunches with `--profile` (logins persist), navigates to `--url`, and starts a guard (`session-guard.js`, default 25 min). **Login is always manual.** Report the exit IP, then check for a login form.
 
-Site-specific skills can wrap this and pass their own targeting (e.g. `--countries fr`). Before every browser-tools action, run `{baseDir}/session-guard.js check`; run `stop` at the end.
+Site-specific skills can wrap this and pass their own targeting (e.g. `--countries fr`). Run `{baseDir}/session-guard.js stop` at the end of the session.
+
+## Session Guard (automatic)
+
+The pre-flight is not typed by hand. The `browser-guard` pi extension
+(`/workspaces/metagrowth/extensions/browser-guard.ts`, loaded with
+`pi -e /workspaces/metagrowth/extensions/browser-guard.ts`) intercepts any bash
+command that runs `browser-nav.js`, `browser-eval.js`, `browser-content.js`,
+`browser-screenshot.js`, `browser-click-xy.js`, `browser-cookies.js`,
+`browser-pick.js` or `browser-hn-scraper.js` and, before it executes:
+
+- runs the wall-clock guard (`session-guard.js`, resolved next to the script)
+  — an **EXPIRED** session blocks the action, and the block names the recovery
+  command;
+- polls `http://127.0.0.1:9222/json/version` — a dead browser blocks the action
+  instead of a connection-refused stack trace. This readiness poll replaces the
+  `sleep 2 && ...` padding after a navigation or a Chrome restart.
+
+A session with no timer is not blocked: the timer is opt-in and belongs to
+proxied, logged-in sessions (`browser-session-start.sh` starts it). `--help`
+invocations pass through.
+
+Env knobs: `BROWSER_GUARD_CDP_URL` (default `http://127.0.0.1:9222`),
+`BROWSER_GUARD_WAIT_MS` (default 3000), `BROWSER_GUARD_SKILL_DIR` (fallback dir
+holding `session-guard.js`), `BROWSER_GUARD_REQUIRE_SESSION=1` (also block when
+no timer was ever started), `BROWSER_GUARD_DISABLE=1` (pass everything through).
 
 ## Navigate
 

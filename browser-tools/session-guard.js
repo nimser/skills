@@ -6,9 +6,13 @@
 //
 // Budget is configurable per session (minutes), default 25.
 //
+// The `check` sub-command is not typed by hand: the browser-guard pi extension
+// (~/.pi/agent/extensions/browser-guard.ts) runs it automatically before every
+// browser-*.js command and blocks the action when the budget is spent.
+//
 // Usage:
 //   node session-guard.js start [minutes]   # begin timing; call once at session start
-//   node session-guard.js check             # call before EVERY browser-tools action; exits 1 + prints "EXPIRED" past budget
+//   node session-guard.js check             # automatic (browser-guard); exits 1 + prints "EXPIRED" past budget
 //   node session-guard.js stop              # clean up at the end of a session (success or abort)
 //
 // State file lives next to this script and is gitignored.
@@ -29,7 +33,7 @@ function readState() {
 if (cmd === "start") {
   const budgetMin = Number(process.argv[3]) || DEFAULT_BUDGET_MIN;
   fs.writeFileSync(stateFile, `${Date.now()}\t${budgetMin}`);
-  console.log(`Session timer started. Hard budget: ${budgetMin} minutes. Call "check" before every browser-tools action.`);
+  console.log(`Session timer started. Hard budget: ${budgetMin} minutes. browser-guard checks it before every browser-tools action.`);
 } else if (cmd === "check") {
   if (!fs.existsSync(stateFile)) {
     console.error(`No active session (run "start" first). Refusing to proceed without a timer.`);

@@ -90,5 +90,13 @@ fi
 # Don't bake in an absolute path with the current $HOME; re-expand $HOME at
 # push time so the same repo config works whether it's the host
 # (/home/owner) or a devcontainer (/home/vscode).
-git config core.sshCommand "ssh -i \$HOME/.ssh/${KEY_NAME} -F /dev/null"
+#
+# IdentityAgent=none + IdentitiesOnly=yes matter as much as -i: `-F /dev/null`
+# only ignores ssh_config, ssh still talks to $SSH_AUTH_SOCK and offers the
+# agent's keys FIRST. When the agent holds a YubiKey-backed ED25519-SK key,
+# signing needs a touch, and a non-interactive git call gets
+#   sign_and_send_pubkey: signing failed ... agent refused operation
+# even though the deploy key is right there. Cutting the agent out of this
+# repo's ssh makes bare `git fetch` / `git push` work with no touch at all.
+git config core.sshCommand "ssh -i \$HOME/.ssh/${KEY_NAME} -F /dev/null -o IdentitiesOnly=yes -o IdentityAgent=none"
 echo "[auto-commit-and-push] Git configured to use deploy key ${KEY_NAME}."

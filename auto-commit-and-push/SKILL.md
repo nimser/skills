@@ -23,6 +23,8 @@ Exit 0 → proceed to step 2. Exit 1 → **stop**: nothing is staged, nothing is
 
 ### 2. Survey before staging
 
+Resolve and state the target repository's visibility with `gh repo view --json visibility` before staging; treat unknown visibility as public.
+
 ```bash
 git status --porcelain && git diff --stat HEAD
 find . -mindepth 2 -maxdepth 4 -name .git -not -path '*/node_modules/*' 2>/dev/null

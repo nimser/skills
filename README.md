@@ -31,6 +31,9 @@ Google Workspace
 ├── gdcli                           # Google Drive CLI
 └── gmcli                           # Gmail CLI
 
+Data
+└── teable                          # Teable bases: typed fields, kanban views, records
+
 Utilities
 ├── transcribe                      # speech-to-text via Groq Whisper
 └── vscode                          # VS Code diffs & file comparison

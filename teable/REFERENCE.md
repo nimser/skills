@@ -69,9 +69,11 @@ for hues `blue cyan gray green orange pink purple red teal yellow`.
 - **calendar** — `{ "startDateFieldId": "fld…", "endDateFieldId": "fld…", "titleFieldId": "fld…", "colorConfig": { "type": "field", "fieldId": "fld…" } }`.
 - **grid** — `{ "rowHeight": "short|medium|tall|extraTall|autoFit", "frozenFieldId": "fld…" }`.
 
-Per-view column visibility is `PUT /table/{tableId}/view/{viewId}/column-meta`
-with `[{ "fieldId": "fld…", "columnMeta": { "hidden": true } }]`. Hiding is per
-view, so the same table can show a clean board and a raw grid.
+Per-view column visibility is `PUT /table/{tableId}/view/{viewId}/column-meta`.
+The metadata is view-specific: grid uses `{"hidden": true}`, while kanban and
+gallery use `{"visible": false}`. The wrong key can be accepted on write and
+then make the view unreadable on its next projection. Hiding is per view, so the
+same table can show a clean board and a raw grid.
 
 ## Endpoints used by `teable.js`
 

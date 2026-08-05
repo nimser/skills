@@ -170,11 +170,16 @@ const commands = {
 };
 
 async function setVisibility(tableId, viewId, names, hidden) {
-	const fields = await api("GET", `/table/${tableId}/field`);
+	const [fields, views] = await Promise.all([api("GET", `/table/${tableId}/field`), api("GET", `/table/${tableId}/view`)]);
+	const view = views.find((candidate) => candidate.id === viewId);
+	if (!view) die(`no view '${viewId}' in ${tableId}`);
+	// Teable's unions differ by view: grid uses `hidden`, kanban/gallery use `visible`.
+	// The wrong one is accepted on write but makes the view projection unreadable afterwards.
+	const columnMeta = view.type === "kanban" || view.type === "gallery" ? { visible: !hidden } : { hidden };
 	const payload = names.map((name) => {
 		const field = fields.find((candidate) => candidate.name === name || candidate.id === name);
 		if (!field) die(`no field '${name}' in ${tableId}`);
-		return { fieldId: field.id, columnMeta: { hidden } };
+		return { fieldId: field.id, columnMeta };
 	});
 	await api("PUT", `/table/${tableId}/view/${viewId}/column-meta`, payload);
 	console.log(`${hidden ? "hidden" : "shown"}: ${names.join(", ")}`);

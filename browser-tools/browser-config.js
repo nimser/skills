@@ -5,7 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 
-
 const DEFAULT_PORT = 9222;
 const MAX_PORT = 65535;
 const STARTUP_LOCK_WAIT_MS = 10_000;
@@ -32,7 +31,7 @@ export function stateFile() {
 }
 
 function lockFile() {
-	return path.join(runtimeDir(), "startup.lock");
+	return path.join(os.tmpdir(), "browser-tools", "startup.lock");
 }
 
 export function cdpUrl(port) {
@@ -45,15 +44,8 @@ function validPort(value) {
 	return port;
 }
 
-function portFromUrl(value) {
-	if (!value) return undefined;
-	const url = new URL(value);
-	return validPort(url.port || (url.protocol === "https:" ? 443 : 80));
-}
-
 export function requestedStartPort() {
 	if (env("BROWSER_CDP_PORT")) return validPort(env("BROWSER_CDP_PORT"));
-	if (env("BROWSER_CDP_URL")) return portFromUrl(env("BROWSER_CDP_URL"));
 	return DEFAULT_PORT;
 }
 
@@ -114,10 +106,10 @@ export async function waitForCdp(port, timeoutMs = 15_000) {
 }
 
 export function resolveCdpUrl() {
-	if (env("BROWSER_CDP_URL")) return env("BROWSER_CDP_URL").replace(/\/$/, "");
-	if (env("BROWSER_CDP_PORT")) return cdpUrl(validPort(env("BROWSER_CDP_PORT")));
 	const state = readState();
 	if (state) return cdpUrl(state.port);
+	if (env("BROWSER_CDP_URL")) return env("BROWSER_CDP_URL").replace(/\/$/, "");
+	if (env("BROWSER_CDP_PORT")) return cdpUrl(validPort(env("BROWSER_CDP_PORT")));
 	throw new Error("no browser-tools session is recorded for this container; run browser-start.js first");
 }
 
@@ -140,6 +132,7 @@ async function processExists(pid) {
 }
 
 export async function acquireStartupLock() {
+	fs.mkdirSync(path.dirname(lockFile()), { recursive: true, mode: 0o700 });
 	fs.mkdirSync(runtimeDir(), { recursive: true, mode: 0o700 });
 	const deadline = Date.now() + STARTUP_LOCK_WAIT_MS;
 	for (;;) {

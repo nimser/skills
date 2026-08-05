@@ -30,8 +30,10 @@ Optional environment variables:
 - `BROWSER_TOOLS_RUNTIME_DIR` — override the container-local runtime directory.
 - `BROWSER_USER_DATA_DIR` — override the profile directory; use only a path local to this container.
 - `BROWSER_TOOLS_INSTANCE` — isolate multiple browser sessions in one container.
-- `BROWSER_CDP_PORT` — starting/helper port; startup increments when occupied.
-- `BROWSER_CDP_URL` — explicit helper endpoint, overriding local state.
+- `BROWSER_CDP_PORT` — starting port; startup increments when occupied. The
+  recorded port wins for helpers after startup.
+- `BROWSER_CDP_URL` — fallback helper endpoint when no local browser state is
+  recorded. The recorded port wins after local startup.
 
 ## Proxy Support (optional)
 

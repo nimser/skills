@@ -10,7 +10,7 @@
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { getProxyConfig } from "./proxy-util.js";
 import { runtimeDir } from "./browser-config.js";
 

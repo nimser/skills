@@ -6,6 +6,7 @@
 //
 // Usage: browser-click-xy.js <x> <y>
 import puppeteer from "puppeteer-core";
+import { connectBrowser } from "./browser-config.js";
 
 const [xArg, yArg] = process.argv.slice(2);
 const x = Number(xArg), y = Number(yArg);
@@ -14,7 +15,7 @@ if (!Number.isFinite(x) || !Number.isFinite(y)) {
 	process.exit(1);
 }
 
-const browser = await puppeteer.connect({ browserURL: "http://localhost:9222", defaultViewport: null });
+const browser = await connectBrowser(puppeteer);
 const pages = await browser.pages();
 const page = pages[pages.length - 1];
 await page.mouse.click(x, y);

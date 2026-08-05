@@ -15,14 +15,12 @@
 //   node session-guard.js check             # automatic (browser-guard); exits 1 + prints "EXPIRED" past budget
 //   node session-guard.js stop              # clean up at the end of a session (success or abort)
 //
-// State file lives next to this script and is gitignored.
+// State file lives in the container-local browser runtime directory.
 import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { runtimeDir } from "./browser-config.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_BUDGET_MIN = 25;
-const stateFile = path.join(__dirname, ".browser-session-guard");
+const stateFile = process.env.BROWSER_SESSION_GUARD_STATE || `${runtimeDir()}/session-guard.state`;
 const cmd = process.argv[2];
 
 function readState() {
@@ -32,6 +30,7 @@ function readState() {
 
 if (cmd === "start") {
   const budgetMin = Number(process.argv[3]) || DEFAULT_BUDGET_MIN;
+  fs.mkdirSync(runtimeDir(), { recursive: true, mode: 0o700 });
   fs.writeFileSync(stateFile, `${Date.now()}\t${budgetMin}`);
   console.log(`Session timer started. Hard budget: ${budgetMin} minutes. browser-guard checks it before every browser-tools action.`);
 } else if (cmd === "check") {

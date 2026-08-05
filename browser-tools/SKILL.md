@@ -5,78 +5,109 @@ description: Interactive browser automation via Chrome DevTools Protocol. Use wh
 
 # Browser Tools
 
-Chrome DevTools Protocol tools for agent-assisted web automation. These tools connect to Chrome running on `:9222` with remote debugging enabled.
+Chrome DevTools Protocol tools for agent-assisted browser automation. The skill
+starts Chrome with remote debugging on an available local port and records that
+endpoint in a container-local runtime directory.
 
 ## Start Chrome
 
 ```bash
-{baseDir}/browser-start.js              # Fresh profile
-{baseDir}/browser-start.js --profile    # Copy user's profile (cookies, logins)
+{baseDir}/browser-start.js              # Fresh container-local profile
+{baseDir}/browser-start.js --profile    # Keep this container's login state
 ```
 
-Launch Chrome with remote debugging on `:9222`. Use `--profile` to preserve user's authentication state.
+The default profile lives below the container's temporary directory, not a
+shared home directory or volume. The runtime directory includes `PI_SESSION_ID`
+when available; set `BROWSER_TOOLS_INSTANCE` to choose a stable instance name.
+The selected CDP endpoint is written to `state.json` beside the profile.
 
-**Note:** reuses a running `:9222` instance if one exists. To change proxy state, kill it first (`pkill -f remote-debugging-port=9222`) so it relaunches with the current `AGENT_HTTPS_PROXY`.
+Startup checks from `BROWSER_CDP_PORT` (or `9222`) upward and selects the first
+available port. If a browser recorded in the local state is alive, it is reused;
+an unrelated browser is never attached to or killed.
+
+Optional environment variables:
+
+- `BROWSER_TOOLS_RUNTIME_DIR` — override the container-local runtime directory.
+- `BROWSER_USER_DATA_DIR` — override the profile directory; use only a path local to this container.
+- `BROWSER_TOOLS_INSTANCE` — isolate multiple browser sessions in one container.
+- `BROWSER_CDP_PORT` — starting/helper port; startup increments when occupied.
+- `BROWSER_CDP_URL` — explicit helper endpoint, overriding local state.
 
 ## Proxy Support (optional)
 
-`AGENT_HTTPS_PROXY` holds a full proxy URL with inline credentials. **Never print, echo, or log its value.** Build it with a proxy-URL builder command (`AGENT_PROXY_URL_CMD`, default `dataimpulse-proxy-url` — a private dotfiles script, **not shipped with this skill**; see `{baseDir}/PROXY.md` for the contract and a reference implementation) and capture via command substitution only:
+`AGENT_HTTPS_PROXY` holds a proxy URL. **Never print, echo, or log its value.**
+Provide it through a local secret-aware command selected with
+`AGENT_PROXY_URL_CMD`; the command is intentionally outside this public skill:
 
 ```bash
-export AGENT_HTTPS_PROXY="$(dataimpulse-proxy-url --print --countries fr)"  # sticky FR exit, 60min rotation
-dataimpulse-proxy-url --help   # --rotating, --session-id, --ttl, --state, --city, --list-countries, --entry
+export AGENT_HTTPS_PROXY="$("${AGENT_PROXY_URL_CMD:?set AGENT_PROXY_URL_CMD}" --print)"
 ```
 
-Default (no `--countries`) uses the provider's dashboard-default country. `--rotating` (new IP per request) is for stateless scraping only — never for logged-in sessions. Report only host/port/countries and the exit IP to the user; run `gopass show` only captured into a variable, never bare.
+Use a stable proxy endpoint for logged-in sessions. Environment variables do
+not persist across separate shell calls, so export `AGENT_HTTPS_PROXY` in the
+same call as the browser command or use `browser-session-start.sh`.
 
-Env vars do **not** persist across separate bash tool calls: export and use `AGENT_HTTPS_PROXY` in the *same* call as `browser-start.js`/`browser-nav.js`/`browser-content.js`, otherwise Chrome silently launches without the proxy.
+When set, `browser-start.js` passes the proxy host and port to Chrome without
+inline credentials; navigation helpers answer proxy-auth challenges per page.
+The proxy flag binds at launch, so restart Chrome after changing the variable.
 
-When set: `browser-start.js` passes `--proxy-server=<host:port>` (credentials stripped — Chrome's flag has no inline auth); `browser-nav.js`/`browser-content.js` call `page.authenticate()` per navigation to answer the 407 challenge. Plain HTTP(S) suffices; no SOCKS5. The flag binds at launch, so restart Chrome after setting/changing the var.
-
-Verify it's live before relying on it:
+Verify it before relying on it:
 
 ```bash
 {baseDir}/browser-proxy-check.js
 ```
 
-Curls `https://api.ipify.org/` through the proxy, prints the exit IP, fails if the var is unset/invalid or curl fails, and appends `timestamp\tip` to `../../artifacts/proxy-ip-history.log`.
+The check routes a connectivity request through the proxy and reports only its
+exit address.
 
 ## Proxied Session Bootstrap (logged-in sites)
 
-For logged-in workflows through the residential proxy (account-bound dashboards, social sites), use the one-shot bootstrap:
+For a logged-in workflow, use the one-shot bootstrap:
 
 ```bash
-{baseDir}/browser-session-start.sh --url <URL> [--countries cc[,cc..]] [--rotating] [--session-id X] [--ttl N] [--minutes N] [--no-proxy]
+{baseDir}/browser-session-start.sh --url <URL> [--minutes N] [--no-proxy]
 ```
 
-It sets `AGENT_HTTPS_PROXY` fresh via `dataimpulse-proxy-url` (gopass-backed; proxy flags passed through — default: sticky residential, 60-min rotation interval, dashboard-default country), verifies via `browser-proxy-check.js`, restarts Chrome so the flag binds, relaunches with `--profile` (logins persist), navigates to `--url`, and starts a guard (`session-guard.js`, default 25 min). **Login is always manual.** Report the exit IP, then check for a login form.
+It obtains `AGENT_HTTPS_PROXY` through the locally configured proxy builder,
+verifies it, stops only the browser recorded in this container's local state,
+starts Chrome on an available port so the proxy flag binds, navigates to the
+target URL, and starts a wall-clock session guard. **Login is always manual.**
 
-Site-specific skills can wrap this and pass their own targeting (e.g. `--countries fr`). Run `{baseDir}/session-guard.js stop` at the end of the session.
+Site-specific skills may wrap this script and pass targeting flags accepted by
+their local proxy builder. Common defaults can be set without a wrapper:
+
+```bash
+export AGENT_PROXY_COUNTRIES="fr,de"
+export AGENT_PROXY_TTL=60
+export AGENT_PROXY_ROTATING=false
+```
+
+Command-line flags override these defaults. Run `{baseDir}/session-guard.js stop`
+at the end of the session.
 
 ## Session Guard (automatic)
 
-The pre-flight is not typed by hand. The `browser-guard` pi extension
-(`/workspaces/metagrowth/extensions/browser-guard.ts`, auto-discovered through
-the symlink in `~/.pi/agent/extensions/`, so every session has it) intercepts any bash
-command that runs `browser-nav.js`, `browser-eval.js`, `browser-content.js`,
-`browser-screenshot.js`, `browser-click-xy.js`, `browser-cookies.js`,
-`browser-pick.js` or `browser-hn-scraper.js` and, before it executes:
+The `browser-guard` extension intercepts bash commands that run browser helpers
+and, before they execute:
 
-- runs the wall-clock guard (`session-guard.js`, resolved next to the script)
-  — an **EXPIRED** session blocks the action, and the block names the recovery
-  command;
-- polls `http://127.0.0.1:9222/json/version` — a dead browser blocks the action
-  instead of a connection-refused stack trace. This readiness poll replaces the
-  `sleep 2 && ...` padding after a navigation or a Chrome restart.
+- runs the wall-clock guard (`session-guard.js`, resolved next to the script);
+- polls the CDP endpoint recorded in the container-local browser state — a dead
+  or unrecorded browser blocks the action instead of producing a connection
+  error. This replaces `sleep 2 &&` padding after navigation or a restart.
 
-A session with no timer is not blocked: the timer is opt-in and belongs to
-proxied, logged-in sessions (`browser-session-start.sh` starts it). `--help`
-invocations pass through.
+A session with no timer is not blocked: the timer is opt-in for logged-in
+sessions. `--help` invocations pass through.
 
-Env knobs: `BROWSER_GUARD_CDP_URL` (default `http://127.0.0.1:9222`),
-`BROWSER_GUARD_WAIT_MS` (default 3000), `BROWSER_GUARD_SKILL_DIR` (fallback dir
-holding `session-guard.js`), `BROWSER_GUARD_REQUIRE_SESSION=1` (also block when
-no timer was ever started), `BROWSER_GUARD_DISABLE=1` (pass everything through).
+Environment knobs:
+
+- `BROWSER_GUARD_CDP_URL` — explicit CDP endpoint;
+- `BROWSER_GUARD_WAIT_MS` — readiness wait, default 3000;
+- `BROWSER_GUARD_SKILL_DIR` — directory containing `session-guard.js`;
+- `BROWSER_GUARD_REQUIRE_SESSION=1` — also block when no timer was started;
+- `BROWSER_GUARD_DISABLE=1` — disable the preflight.
+
+The guard otherwise reads `BROWSER_CDP_URL`, `BROWSER_CDP_PORT`, or the local
+state written by `browser-start.js`.
 
 ## Navigate
 
@@ -85,7 +116,8 @@ no timer was ever started), `BROWSER_GUARD_DISABLE=1` (pass everything through).
 {baseDir}/browser-nav.js https://example.com --new
 ```
 
-Navigate to URLs. Use `--new` flag to open in a new tab instead of reusing current tab.
+Navigate to URLs. Use `--new` to open a new tab instead of reusing the current
+one.
 
 ## Evaluate JavaScript
 
@@ -94,7 +126,7 @@ Navigate to URLs. Use `--new` flag to open in a new tab instead of reusing curre
 {baseDir}/browser-eval.js 'document.querySelectorAll("a").length'
 ```
 
-Execute JavaScript in the active tab. Code runs in async context. Use this to extract data, inspect page state, or perform DOM operations programmatically.
+Execute JavaScript in the active tab. Code runs in async context.
 
 ## Screenshot
 
@@ -102,7 +134,7 @@ Execute JavaScript in the active tab. Code runs in async context. Use this to ex
 {baseDir}/browser-screenshot.js
 ```
 
-Capture current viewport and return temporary file path. Use this to visually inspect page state or verify UI changes.
+Capture the current viewport and return a temporary file path.
 
 ## Pick Elements
 
@@ -110,13 +142,8 @@ Capture current viewport and return temporary file path. Use this to visually in
 {baseDir}/browser-pick.js "Click the submit button"
 ```
 
-**IMPORTANT**: Use this tool when the user wants to select specific DOM elements on the page. This launches an interactive picker that lets the user click elements to select them. The user can select multiple elements (Cmd/Ctrl+Click) and press Enter when done. The tool returns CSS selectors for the selected elements.
-
-Common use cases:
-
-- User says "I want to click that button" → Use this tool to let them select it
-- User says "extract data from these items" → Use this tool to let them select the elements
-- When you need specific selectors but the page structure is complex or ambiguous
+Use this when a user wants to select DOM elements. The picker supports multiple
+selections with Cmd/Ctrl-click and finishes with Enter.
 
 ## Cookies
 
@@ -124,7 +151,7 @@ Common use cases:
 {baseDir}/browser-cookies.js
 ```
 
-Display all cookies for the current tab including domain, path, httpOnly, and secure flags. Use this to debug authentication issues or inspect session state.
+Display cookies for the current tab, including domain, path, and security flags.
 
 ## Extract Page Content
 
@@ -132,15 +159,15 @@ Display all cookies for the current tab including domain, path, httpOnly, and se
 {baseDir}/browser-content.js https://example.com
 ```
 
-Navigate to a URL and extract readable content as markdown. Uses Mozilla Readability for article extraction and Turndown for HTML-to-markdown conversion. Works on pages with JavaScript content (waits for page to load).
+Navigate to a URL and extract readable content as Markdown.
 
 ## When to Use
 
-- Testing frontend code in a real browser
-- Interacting with pages that require JavaScript
-- When user needs to visually see or interact with a page
-- Debugging authentication or session issues
-- Scraping dynamic content that requires JS execution
+- Testing a frontend in a real browser.
+- Interacting with a page that requires JavaScript.
+- When a user needs to see or interact with a visible browser.
+- Debugging authentication or session issues.
+- Scraping dynamic content that requires JavaScript.
 
 ---
 
@@ -148,13 +175,15 @@ Navigate to a URL and extract readable content as markdown. Uses Mozilla Readabi
 
 ### DOM Inspection Over Screenshots
 
-**Don't** take screenshots to see page state. **Do** parse the DOM directly:
+Prefer DOM parsing over screenshots when inspecting page state:
 
 ```javascript
-// Get page structure
 document.body.innerHTML.slice(0, 5000)
+```
 
-// Find interactive elements
+Inspect interactive elements directly:
+
+```javascript
 Array.from(document.querySelectorAll('button, input, [role="button"]')).map(e => ({
   id: e.id,
   text: e.textContent.trim(),
@@ -164,90 +193,32 @@ Array.from(document.querySelectorAll('button, input, [role="button"]')).map(e =>
 
 ### Complex Scripts in Single Calls
 
-Wrap everything in an IIFE to run multi-statement code:
+Wrap multi-statement evaluation in an IIFE:
 
 ```javascript
 (function() {
-  // Multiple operations
-  const data = document.querySelector('#target').textContent;
+  const data = document.querySelector('#target')?.textContent;
   const buttons = document.querySelectorAll('button');
-  
-  // Interactions
-  buttons[0].click();
-  
-  // Return results
   return JSON.stringify({ data, buttonCount: buttons.length });
 })()
 ```
 
 ### Batch Interactions
 
-**Don't** make separate calls for each click. **Do** batch them:
-
-```javascript
-(function() {
-  const actions = ["btn1", "btn2", "btn3"];
-  actions.forEach(id => document.getElementById(id).click());
-  return "Done";
-})()
-```
-
-### Typing/Input Sequences
-
-```javascript
-(function() {
-  const text = "HELLO";
-  for (const char of text) {
-    document.getElementById("key-" + char).click();
-  }
-  document.getElementById("submit").click();
-  return "Submitted: " + text;
-})()
-```
-
-### Reading App/Game State
-
-Extract structured state in one call:
-
-```javascript
-(function() {
-  const state = {
-    score: document.querySelector('.score')?.textContent,
-    status: document.querySelector('.status')?.className,
-    items: Array.from(document.querySelectorAll('.item')).map(el => ({
-      text: el.textContent,
-      active: el.classList.contains('active')
-    }))
-  };
-  return JSON.stringify(state, null, 2);
-})()
-```
-
-### Structured DOM Mapping (For Recurring Workflows)
-
-When interacting with complex or recurring applications (like Single Page Applications, nested forms, or accordions), **don't guess selectors on every run**. Instead, create and use a static mapping file.
-
-1. **Check for existing maps first:**
-   Before running exploratory DOM scripts, look for `.agents/artifacts/browser-mappings.json`.
-   If it exists, read it and check if the current URL (domain or path) matches any top-level key to find the appropriate exact CSS selectors.
-
-2. **Create a map if missing:**
-   If the user asks you to interact with a new complex workflow, write a script to explore the DOM (expanding accordions, opening modals sequentially), extract labels/IDs, and append the JSON schema to `.agents/artifacts/browser-mappings.json` using the domain or URL pattern as the top-level key.
-
-3. **Self-Healing:**
-   Websites change. If a selector from the mapping file fails (element not found), assume the UI was updated. Re-run an exploratory script to find the new selectors and update the JSON mapping file automatically.
+Batch independent actions in one browser evaluation rather than making a call
+for each element.
 
 ### Waiting for Updates
 
-If DOM updates after actions, add a small delay with bash:
+If the DOM updates after an action, wait briefly before reading it again:
 
 ```bash
-sleep 0.5 && {baseDir}/browser-eval.js '...'
+sleep 0.5 && {baseDir}/browser-eval.js 'document.body.innerText'
 ```
 
 ### Investigate Before Interacting
 
-Always start by understanding the page structure:
+Start by understanding the page structure:
 
 ```javascript
 (function() {
@@ -257,8 +228,8 @@ Always start by understanding the page structure:
     buttons: document.querySelectorAll('button').length,
     inputs: document.querySelectorAll('input').length,
     mainContent: document.body.innerHTML.slice(0, 3000)
-  };
+  }
 })()
 ```
 
-Then target specific elements based on what you find.
+Then target selectors based on what you found.

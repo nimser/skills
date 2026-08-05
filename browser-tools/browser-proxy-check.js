@@ -10,17 +10,15 @@
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { getProxyConfig } from "./proxy-util.js";
+import { runtimeDir } from "./browser-config.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const HISTORY_FILE = join(__dirname, "..", "..", "artifacts", "proxy-ip-history.log");
+const HISTORY_FILE = process.env.BROWSER_PROXY_HISTORY || join(runtimeDir(), "proxy-ip-history.log");
 
 const proxy = getProxyConfig();
 if (!proxy) {
-	console.error("✗ AGENT_HTTPS_PROXY is not set. Build it (credentials from gopass, never displayed):");
-	console.error('  export AGENT_HTTPS_PROXY="$(dataimpulse-proxy-url --print --countries fr)"');
+	console.error("✗ AGENT_HTTPS_PROXY is not set. Configure it with the local proxy builder before running this check.");
 	process.exit(1);
 }
 

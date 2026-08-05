@@ -7,9 +7,9 @@ import { authenticatePage } from "./proxy-util.js";
 const args = process.argv.slice(2);
 const newTab = args.includes("--new");
 const reload = args.includes("--reload");
-const url = args.find(a => !a.startsWith("--"));
+const urlArg = args.find(a => !a.startsWith("--"));
 
-if (!url) {
+if (!urlArg) {
 	console.log("Usage: browser-nav.js <url> [--new] [--reload]");
 	console.log("\nExamples:");
 	console.log("  browser-nav.js https://example.com          # Navigate current tab");
@@ -17,6 +17,8 @@ if (!url) {
 	console.log("  browser-nav.js https://example.com --reload # Navigate and force reload");
 	process.exit(1);
 }
+
+const url = /^[a-z][a-z\d+.-]*:\/\//i.test(urlArg) ? urlArg : `https://${urlArg}`;
 
 const b = await connectBrowser(puppeteer).catch((e) => {
 	console.error("✗ Could not connect to browser:", e.message);

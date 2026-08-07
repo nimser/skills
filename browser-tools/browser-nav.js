@@ -3,10 +3,12 @@
 import puppeteer from "puppeteer-core";
 import { connectBrowser } from "./browser-config.js";
 import { authenticatePage } from "./proxy-util.js";
+import { DEFAULT_LOGIN_WAIT_MS, waitForManualLogin } from "./login-wait.js";
 
 const args = process.argv.slice(2);
 const newTab = args.includes("--new");
 const reload = args.includes("--reload");
+const skipLoginWait = args.includes("--no-login-wait");
 const urlArg = args.find(a => !a.startsWith("--"));
 
 if (!urlArg) {
@@ -15,6 +17,7 @@ if (!urlArg) {
 	console.log("  browser-nav.js https://example.com          # Navigate current tab");
 	console.log("  browser-nav.js https://example.com --new    # Open in new tab");
 	console.log("  browser-nav.js https://example.com --reload # Navigate and force reload");
+	console.log(`\nA login wall pauses navigation for up to ${Math.round(DEFAULT_LOGIN_WAIT_MS / 1000)}s of manual login (--no-login-wait skips the pause).`);
 	process.exit(1);
 }
 
@@ -26,19 +29,13 @@ const b = await connectBrowser(puppeteer).catch((e) => {
 	process.exit(1);
 });
 
-if (newTab) {
-	const p = await b.newPage();
-	await authenticatePage(p);
-	await p.goto(url, { waitUntil: "domcontentloaded" });
-	console.log("✓ Opened:", url);
-} else {
-	const p = (await b.pages()).at(-1);
-	await authenticatePage(p);
-	await p.goto(url, { waitUntil: "domcontentloaded" });
-	if (reload) {
-		await p.reload({ waitUntil: "domcontentloaded" });
-	}
-	console.log("✓ Navigated to:", url);
-}
+const p = newTab ? await b.newPage() : (await b.pages()).at(-1);
+await authenticatePage(p);
+await p.goto(url, { waitUntil: "domcontentloaded" });
+if (reload && !newTab) await p.reload({ waitUntil: "domcontentloaded" });
+console.log(newTab ? "✓ Opened:" : "✓ Navigated to:", url);
+
+const login = skipLoginWait ? { resolved: true } : await waitForManualLogin(p, { log: console.log });
 
 await b.disconnect();
+process.exit(login.resolved ? 0 : 2);

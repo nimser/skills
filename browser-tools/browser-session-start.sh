@@ -83,11 +83,17 @@ echo "→ Restarting the devpod-local browser to bind the proxy flag..."
 ./browser-start.js --profile
 
 echo "→ Navigating to $URL (login is manual if a login form appears)..."
-./browser-nav.js "$URL"
+LOGIN_PENDING=0
+./browser-nav.js "$URL" || { [[ $? == 2 ]] && LOGIN_PENDING=1; }
 
 echo "→ Resetting session guard..."
 node ./session-guard.js stop || true
 echo "→ Starting the ${MINUTES}-minute session guard..."
 node ./session-guard.js start "$MINUTES"
+
+if [[ "$LOGIN_PENDING" == 1 ]]; then
+  echo "⏸ Login still pending. Report the proxy exit IP above, ask the user to log in in the visible browser, then re-run browser-login-wait.js."
+  exit 2
+fi
 
 echo "✓ Ready. Report the proxy exit IP above to the user, then check whether a login form appeared."

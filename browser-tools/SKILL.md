@@ -134,6 +134,11 @@ and wait up to 50 seconds for the user to sign in in the visible browser.
 {baseDir}/browser-login-wait.js --seconds 90 # longer window
 ```
 
+While the user is typing, the wait extends: helpers count keystroke/pointer
+events on the page (event tally and timestamp only, never field contents) and
+keep waiting until 20 seconds pass with no input, up to a 5-minute ceiling. A
+half-typed login is never cut off.
+
 Exit code 2 means the window expired. Then stop and hand back to the user: say
 which URL is blocked and ask them to log in, and continue only after they
 confirm. Never enter credentials, reuse leaked ones, or route around the wall
@@ -141,7 +146,8 @@ confirm. Never enter credentials, reuse leaked ones, or route around the wall
 single exception is when the gated page is not required to complete the task,
 in which case skip that page and say so.
 
-`BROWSER_LOGIN_WAIT_MS` overrides the default window.
+`BROWSER_LOGIN_WAIT_MS` overrides the base window, `BROWSER_LOGIN_IDLE_MS` the
+no-input grace, `BROWSER_LOGIN_MAX_WAIT_MS` the ceiling.
 
 ## Evaluate JavaScript
 

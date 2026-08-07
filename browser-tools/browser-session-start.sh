@@ -85,6 +85,8 @@ echo "→ Restarting the devpod-local browser to bind the proxy flag..."
 echo "→ Navigating to $URL (login is manual if a login form appears)..."
 ./browser-nav.js "$URL"
 
+echo "→ Resetting session guard..."
+node ./session-guard.js stop || true
 echo "→ Starting the ${MINUTES}-minute session guard..."
 node ./session-guard.js start "$MINUTES"
 

@@ -116,10 +116,32 @@ state written by `browser-start.js`.
 ```bash
 {baseDir}/browser-nav.js https://example.com
 {baseDir}/browser-nav.js https://example.com --new
+{baseDir}/browser-nav.js https://example.com --no-login-wait
 ```
 
 Navigate to URLs. Use `--new` to open a new tab instead of reusing the current
-one.
+one. On a login wall, navigation pauses for the manual-login window and exits
+with code 2 if the wall is still up; `--no-login-wait` skips that pause.
+
+## Login Walls (manual login, 50s window)
+
+Login is always manual. `browser-nav.js` and `browser-content.js` detect a
+login wall (password field, one-time-code prompt, auth URL, sign-in-only page)
+and wait up to 50 seconds for the user to sign in in the visible browser.
+
+```bash
+{baseDir}/browser-login-wait.js              # wait on the active tab
+{baseDir}/browser-login-wait.js --seconds 90 # longer window
+```
+
+Exit code 2 means the window expired. Then stop and hand back to the user: say
+which URL is blocked and ask them to log in, and continue only after they
+confirm. Never enter credentials, reuse leaked ones, or route around the wall
+(alternate endpoints, caches, mirrors, API keys, unauthenticated views) — the
+single exception is when the gated page is not required to complete the task,
+in which case skip that page and say so.
+
+`BROWSER_LOGIN_WAIT_MS` overrides the default window.
 
 ## Evaluate JavaScript
 
@@ -161,7 +183,8 @@ Display cookies for the current tab, including domain, path, and security flags.
 {baseDir}/browser-content.js https://example.com
 ```
 
-Navigate to a URL and extract readable content as Markdown.
+Navigate to a URL and extract readable content as Markdown. A login wall pauses
+extraction for the manual-login window and exits with code 2 if unresolved.
 
 ## When to Use
 

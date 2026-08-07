@@ -3,6 +3,7 @@
 import puppeteer from "puppeteer-core";
 import { connectBrowser } from "./browser-config.js";
 import { authenticatePage } from "./proxy-util.js";
+import { waitForManualLogin } from "./login-wait.js";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
@@ -43,6 +44,18 @@ await Promise.race([
 	p.goto(url, { waitUntil: "networkidle2" }),
 	new Promise((r) => setTimeout(r, 10000)),
 ]).catch(() => {});
+
+// A login wall pauses extraction: login is manual, never bypassed.
+clearTimeout(timeoutId);
+const login = await waitForManualLogin(p);
+if (!login.resolved) {
+	console.error("✗ Content not extracted: the page is behind a login wall.");
+	process.exit(2);
+}
+setTimeout(() => {
+	console.error("✗ Timeout after 30s");
+	process.exit(1);
+}, TIMEOUT).unref();
 
 // Get HTML via CDP (works even with TrustedScriptURL restrictions)
 const client = await p.createCDPSession();

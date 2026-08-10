@@ -26,16 +26,11 @@ Web & Browser
 ├── browser-tools                   # Chrome DevTools Protocol automation
 └── youtube-transcript              # YouTube transcript fetcher
 
-Google Workspace
-├── gccli                           # Google Calendar CLI
-├── gdcli                           # Google Drive CLI
-└── gmcli                           # Gmail CLI
 
 Data
 └── teable                          # Teable bases: typed fields, kanban views, records
 
 Utilities
-├── transcribe                      # speech-to-text via Groq Whisper
 └── vscode                          # VS Code diffs & file comparison
 ```
 

@@ -91,6 +91,7 @@ same table can show a clean board and a raw grid.
 | view sort / group / filter | `PUT /api/table/{tableId}/view/{viewId}/{sort,group,filter}` |
 | records | `GET /api/table/{tableId}/record?fieldKeyType=name&take=200&skip=0` |
 | create / update | `POST /api/table/{tableId}/record`, `PATCH /api/table/{tableId}/record/{recordId}` |
+| per-field change history | `GET /api/table/{tableId}/record/history?take=200[&cursor=…]` |
 
 Auth is `Authorization: Bearer <token>` on every call. `fieldKeyType=name` lets
 records be addressed by field name instead of field id — worth it everywhere
@@ -107,6 +108,22 @@ at, or approve, a single row.
 - A `date` conversion drops values it cannot parse. Read the column first.
 - `singleSelect` conversion creates choices for existing values, uncoloured;
   pass `choices` explicitly to control colour and order.
+- **Converting a select with id-less choices empties the column.** A `choices`
+  array of bare `{name, color}` is a *new* option set, so every cell — including
+  ones whose value the new set still declares — is cleared. Read the field first
+  and send existing choices back with their `id`, adding only the missing names:
+
+  ```json
+  { "type": "singleSelect", "options": { "choices": [
+      { "id": "cho…", "name": "queued", "color": "blueBright" },
+      { "name": "running", "color": "cyanBright" } ] } }
+  ```
+
+  Retiring a value is therefore two steps: move the rows off it, then convert.
+- **Record history is the undo.** `GET /table/{tableId}/record/history` returns
+  `before`/`after` per field change, so a bad conversion or a wrong bulk patch is
+  reversible: read the events whose `after.data` is `null` and write each
+  `before.data` back. Check it exists on the instance *before* the bulk write.
 - Records write JSON `null`, not `""`, to clear a cell.
 - Paging is `take`/`skip`; `take` caps at 1000, and a page shorter than `take`
   means the end.

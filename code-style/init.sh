@@ -93,6 +93,7 @@ declare -a GITIGNORE_ADDED=() GITIGNORE_PRESENT=()
 declare -a TOOLS_REMOVED=()   TOOLS_WARNED=()
 declare -a COMMIT_FILES=()
 HOOK_STATE=""
+PACKAGE_CREATED=false
 
 # ── early checks for existing project ────────────────────
 SKIP_OXC=false
@@ -346,6 +347,7 @@ if [[ ! -f package.json ]]; then
   "scripts": {}
 }
 PKG
+  PACKAGE_CREATED=true
 fi
 
 # ── interactive merge prompt ──────────────────────────────
@@ -651,10 +653,10 @@ SCRIPT_ORDER=("${FILTERED_SCRIPT_ORDER[@]}")
 declare -A SCRIPT_VALUES
 SCRIPT_VALUES[lint]="oxlint --type-aware ."
 SCRIPT_VALUES[lint:fix]="oxlint --type-aware --fix ."
-SCRIPT_VALUES[format]="oxfmt . && dprint fmt"
-SCRIPT_VALUES[format:check]="oxfmt --check . && dprint check"
+SCRIPT_VALUES[format]="oxfmt . && dprint fmt --allow-no-files"
+SCRIPT_VALUES[format:check]="oxfmt --check . && dprint check --allow-no-files"
 SCRIPT_VALUES[typecheck]="tsc --noEmit"
-SCRIPT_VALUES[check]="oxlint --type-aware . && oxfmt --check . && dprint check && tsc --noEmit"
+SCRIPT_VALUES[check]="oxlint --type-aware . && oxfmt --check . && dprint check --allow-no-files && tsc --noEmit"
 
 # Apply script overrides from .code-style.local
 for override in "${LOCAL_OVERRIDE_SCRIPTS[@]}"; do
@@ -730,12 +732,84 @@ for dep in "${DEPS_TO_CHECK[@]}"; do
 done
 
 if [[ ${#NEED[@]} -gt 0 ]]; then
-  $ADD "${NEED[@]}"
+  INSTALL_ARGS=()
+  for dep in "${NEED[@]}"; do
+    if [[ "$PM_DETECTED" == "vp (vite-plus)" && "$dep" == "dprint" ]]; then
+      INSTALL_ARGS=(--allow-build dprint)
+      break
+    fi
+  done
+  $ADD "${INSTALL_ARGS[@]}" "${NEED[@]}"
   DEPS_INSTALLED+=("${NEED[@]}")
   COMMIT_FILES+=("package.json")
+  case "$PM_DETECTED" in
+    "vp (vite-plus)"|pnpm)
+      [[ -f pnpm-lock.yaml ]] && COMMIT_FILES+=("pnpm-lock.yaml")
+      [[ -f pnpm-workspace.yaml ]] && COMMIT_FILES+=("pnpm-workspace.yaml")
+      ;;
+    npm)
+      [[ -f package-lock.json ]] && COMMIT_FILES+=("package-lock.json")
+      ;;
+  esac
+fi
+
+# Format before the bootstrap commit so the new hook starts from a clean tree.
+if [[ -d .git ]] && ! should_ignore_script format; then
+  if [[ ${#CONFIGS_CREATED[@]} -gt 0 || ${#CONFIGS_MERGED[@]} -gt 0 || \
+        ${#CONFIGS_RENAMED[@]} -gt 0 || ${#SCRIPTS_ADDED[@]} -gt 0 || \
+        ${#DEPS_INSTALLED[@]} -gt 0 || ${#GITIGNORE_ADDED[@]} -gt 0 ]]; then
+    $RUN format
+  fi
+fi
+
+# ── commit block ──────────────────────────────────────────
+# Commit only files created/modified by this script (not other working dir changes)
+if [[ -d .git ]] && command -v git &>/dev/null; then
+  # Collect all files that were created or modified
+  for f in "${CONFIGS_CREATED[@]}"; do [[ -f "$f" ]] && COMMIT_FILES+=("$f"); done
+  for f in "${CONFIGS_MERGED[@]}"; do [[ -f "$f" ]] && COMMIT_FILES+=("$f"); done
+  for f in "${CONFIGS_RENAMED[@]}"; do
+    # Extract the new filename from "old.jsonc → new.json"
+    NEW_FILE="${f##*→ }"
+    [[ -f "$NEW_FILE" ]] && COMMIT_FILES+=("$NEW_FILE")
+  done
+  [[ -f ".gitignore" ]] && [[ ${#GITIGNORE_ADDED[@]} -gt 0 ]] && COMMIT_FILES+=(".gitignore")
+  [[ "$PACKAGE_CREATED" == true || ${#SCRIPTS_ADDED[@]} -gt 0 ]] && COMMIT_FILES+=("package.json")
+
+  # Stage only tracked files
+  if [[ ${#COMMIT_FILES[@]} -gt 0 ]]; then
+    STAGED_FILES=()
+    for f in "${COMMIT_FILES[@]}"; do
+      if git ls-files --error-unmatch "$f" &>/dev/null || [[ -f "$f" ]]; then
+        git add -f "$f" 2>/dev/null && STAGED_FILES+=("$f")
+      fi
+    done
+
+    # Only commit if there are staged changes
+    if [[ ${#STAGED_FILES[@]} -gt 0 ]] && ! git diff --cached --quiet; then
+      COMMIT_MSG=$(cat <<'EOF'
+🎨 style: bootstrap code-style tooling
+
+Add strict TypeScript + OXC linting/formatting configuration
+
+- Install oxlint, oxfmt, dprint, typescript
+- Configure tsconfig with strict mode + noUncheckedIndexedAccess
+- Add lint, format, typecheck, and check scripts
+- Install pre-commit hook for future commits
+- Format bootstrap files before the initial commit
+- Set up .gitignore entries (node_modules, dist, *.tsbuildinfo)
+- Enforce single quotes, no semicolons, 100 char line width
+
+Tooling: oxlint (--type-aware) + oxfmt + dprint + tsc
+EOF
+)
+      git commit -m "$COMMIT_MSG" --quiet
+    fi
+  fi
 fi
 
 # ── pre-commit hook ─────────────────────────────────────────
+# Install after the bootstrap commit so an empty project can initialize cleanly.
 if [[ -d .git ]]; then
   HOOK_DIR=".git/hooks"
   HOOK_FILE="${HOOK_DIR}/pre-commit"
@@ -784,50 +858,6 @@ HOOKEOF
   fi
 else
   HOOK_STATE="skipped (no .git)"
-fi
-
-# ── commit block ──────────────────────────────────────────
-# Commit only files created/modified by this script (not other working dir changes)
-if [[ -d .git ]] && command -v git &>/dev/null; then
-  # Collect all files that were created or modified
-  for f in "${CONFIGS_CREATED[@]}"; do [[ -f "$f" ]] && COMMIT_FILES+=("$f"); done
-  for f in "${CONFIGS_MERGED[@]}"; do [[ -f "$f" ]] && COMMIT_FILES+=("$f"); done
-  for f in "${CONFIGS_RENAMED[@]}"; do
-    # Extract the new filename from "old.jsonc → new.json"
-    NEW_FILE="${f##*→ }"
-    [[ -f "$NEW_FILE" ]] && COMMIT_FILES+=("$NEW_FILE")
-  done
-  [[ -f ".gitignore" ]] && [[ ${#GITIGNORE_ADDED[@]} -gt 0 ]] && COMMIT_FILES+=(".gitignore")
-  
-  # Stage only tracked files
-  if [[ ${#COMMIT_FILES[@]} -gt 0 ]]; then
-    STAGED_FILES=()
-    for f in "${COMMIT_FILES[@]}"; do
-      if git ls-files --error-unmatch "$f" &>/dev/null || [[ -f "$f" ]]; then
-        git add "$f" 2>/dev/null && STAGED_FILES+=("$f")
-      fi
-    done
-    
-    # Only commit if there are staged changes
-    if [[ ${#STAGED_FILES[@]} -gt 0 ]] && ! git diff --cached --quiet; then
-      COMMIT_MSG=$(cat <<'EOF'
-🎨 style: bootstrap code-style tooling
-
-Add strict TypeScript + OXC linting/formatting configuration
-
-- Install oxlint, oxfmt, dprint, typescript
-- Configure tsconfig with strict mode + noUncheckedIndexedAccess
-- Add lint, format, typecheck, and check scripts
-- Install pre-commit hook (runs check on every commit)
-- Set up .gitignore entries (node_modules, dist, *.tsbuildinfo)
-- Enforce single quotes, no semicolons, 100 char line width
-
-Tooling: oxlint (--type-aware) + oxfmt + dprint + tsc
-EOF
-)
-      git commit -m "$COMMIT_MSG" --quiet
-    fi
-  fi
 fi
 
 # ── recap ─────────────────────────────────────────────────

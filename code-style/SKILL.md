@@ -66,7 +66,7 @@ Apply these conventions to every TypeScript/JavaScript file.
 - Single quotes · no semicolons · trailing commas es5
 - printWidth: 100 · tabWidth: 2 · spaces · max line len 100
 - Let the formatter own whitespace — never manually align
-- Markdown: dprint (wrap: maintain, lineWidth: 10000)
+- Markdown is not part of the default lint or format commands
 
 ## Package Exports
 - Explicit `exports` in `package.json` (types + import entries)
@@ -75,18 +75,18 @@ Apply these conventions to every TypeScript/JavaScript file.
 
 ## Scripts (run via package manager)
 
-These scripts are set up by `code-style/init.sh` and installed as devDependencies (`oxlint`, `oxfmt`, `dprint`, `typescript`, `oxlint-tsgolint`).
+These scripts are set up by `code-style/init.sh` and installed as devDependencies (`oxlint`, `oxfmt`, `typescript`, `oxlint-tsgolint`).
 
-> **Note:** `oxlint-tsgolint` is required for `--type-aware` linting. It is automatically installed when lint scripts use `--type-aware`. When Vite+ is used, init explicitly allows dprint's postinstall build.
+> **Note:** `oxlint-tsgolint` is required for `--type-aware` linting. It is automatically installed when lint scripts use `--type-aware`. Lint uses `find -P`, so symlinks are never traversed.
 
 | Script           | Command                                              | Purpose                            |
 | ---------------- | ---------------------------------------------------- | ---------------------------------- |
-| `lint`           | `oxlint --type-aware .`                              | Check for lint issues (type-aware) |
-| `lint:fix`       | `oxlint --type-aware --fix .`                        | Auto-fix fixable lint issues       |
-| `format`         | `oxfmt . && dprint fmt --allow-no-files`             | Format code and markdown in place  |
-| `format:check`   | `oxfmt --check . && dprint check --allow-no-files`   | CI / verify formatting is clean    |
-| `typecheck`      | `tsc --noEmit`                                       | Type-check only                    |
-| `check`          | `oxlint --type-aware . && oxfmt --check . && dprint check --allow-no-files && tsc --noEmit` | Full gate (lint + format + typecheck) |
+| `lint`           | `find -P … -exec oxlint --type-aware {} +`           | Check regular JS/TS files         |
+| `lint:fix`       | `find -P … -exec oxlint --type-aware --fix {} +`     | Auto-fix regular JS/TS files      |
+| `format`         | `oxfmt .`                                            | Format code in place              |
+| `format:check`   | `oxfmt --check .`                                    | CI / verify formatting is clean   |
+| `typecheck`      | `tsc --noEmit`                                       | Type-check only                   |
+| `check`          | `lint && oxfmt --check . && tsc --noEmit`            | Full gate (lint + format + typecheck) |
 
 ### Pre-commit hook
 
@@ -107,23 +107,6 @@ Create a `.code-style.local` file in your project root to persistently customize
 - `ignore_dep` — skip installing a specific dependency
 - `override` — apply jq expressions to modify a config after merging
 - `override_script` — override a script's command (use `|` as delimiter since `:` appears in script names)
-
-**Example: completely avoid dprint**
-
-```bash
-# .code-style.local
-
-# Don't create local dprint config
-ignore_file = .dprint.json
-
-# Don't install dprint dependency
-ignore_dep = dprint
-
-# Override scripts that reference dprint to use oxfmt only
-override_script = format|oxfmt .
-override_script = format:check|oxfmt --check .
-override_script = check|oxlint --type-aware . && oxfmt --check . && tsc --noEmit
-```
 
 **Other examples:**
 

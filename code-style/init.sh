@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# code-style/init.sh — bootstrap OXC + dprint + strict tsconfig for a TypeScript project
+# code-style/init.sh — bootstrap OXC + strict tsconfig for a TypeScript project
 # Interactive for existing projects (prompts before merge), non-interactive for fresh ones.
 # Requires: Bash 4.4+, jq, git (optional but recommended)
 # Usage: bash init.sh [target-dir] [-y|--yes]
@@ -10,19 +10,11 @@
 #   automatically added to .git/info/exclude (local-only, not tracked).
 #
 #   Supported directives:
-#     ignore_file = .dprint.json             # Skip merging a config file entirely
-#     ignore_script = format                 # Skip setting a specific script
-#     ignore_dep = dprint                    # Skip installing a specific dependency
-#     override = .file.json:{"k": "v"}       # Apply jq expression after merge
-#     override_script = format|oxfmt .       # Override a script (use | as delimiter)
-#
-#   Example .code-style.local:
-#     # Skip dprint entirely (config, scripts, and dependency)
-#     ignore_file = .dprint.json
-#     ignore_dep = dprint
-#     override_script = format|oxfmt .
-#     override_script = format:check|oxfmt --check .
-#     override_script = check|oxlint --type-aware . && oxfmt --check . && tsc --noEmit
+#     ignore_file = tsconfig.json             # Skip merging a config file entirely
+#     ignore_script = typecheck               # Skip setting a specific script
+#     ignore_dep = typescript                 # Skip installing a specific dependency
+#     override = .file.json:{"k": "v"}         # Apply jq expression after merge
+#     override_script = check|oxlint .         # Override a script (use | as delimiter)
 set -euo pipefail
 
 # ── argument parsing ────────────────────────────────────────
@@ -94,6 +86,7 @@ declare -a TOOLS_REMOVED=()   TOOLS_WARNED=()
 declare -a COMMIT_FILES=()
 HOOK_STATE=""
 PACKAGE_CREATED=false
+PACKAGE_CHANGED=false
 
 # ── early checks for existing project ────────────────────
 SKIP_OXC=false
@@ -283,7 +276,7 @@ else
 fi
 
 # ── .gitignore (before git init) ──────────────────────────
-GITIGNORE_ENTRIES=("node_modules" "dist" "*.tsbuildinfo" ".env")
+GITIGNORE_ENTRIES=("node_modules" "dist" "*.tsbuildinfo" ".env" ".pnpm-store")
 
 if [[ ! -f .gitignore ]]; then
   for entry in "${GITIGNORE_ENTRIES[@]}"; do
@@ -321,7 +314,7 @@ else
   git init -q
   # Stage existing files so the user can diff/revert after this script runs
   for f in package.json .gitignore tsconfig.json tsconfig.build.json \
-           .oxlintrc.json .oxfmtrc.json .dprint.json; do
+           .oxlintrc.json .oxfmtrc.json; do
     [[ -f "$f" ]] && git add "$f" 2>/dev/null || true
   done
   GIT_STATE="initialized (staged existing files)"
@@ -329,7 +322,7 @@ fi
 
 # ── rename .jsonc → .json before processing ───────────────
 # If a project has e.g. .oxlintrc.jsonc but we want .json, rename it.
-JSONC_VARIANTS=(.oxlintrc .oxfmtrc .dprint)
+JSONC_VARIANTS=(.oxlintrc .oxfmtrc)
 for base in "${JSONC_VARIANTS[@]}"; do
   if [[ -f "${base}.jsonc" && ! -f "${base}.json" ]]; then
     mv "${base}.jsonc" "${base}.json"
@@ -373,11 +366,11 @@ prompt_merge() {
 # This file is NEVER overwritten by init.sh. Add it to .git/info/exclude.
 #
 # Supported directives:
-#   ignore_file = .dprint.json         # Skip merging a config file entirely
-#   ignore_script = format             # Skip setting a specific script
-#   ignore_dep = dprint                # Skip installing a specific dependency
-#   override = .file.json:{"k": "v"}   # Apply jq expression after merge
-#   override_script = format:oxfmt .   # Override a script's command
+#   ignore_file = tsconfig.json        # Skip merging a config file entirely
+#   ignore_script = typecheck          # Skip setting a specific script
+#   ignore_dep = typescript            # Skip installing a specific dependency
+#   override = .file.json:{"k": "v"}  # Apply jq expression after merge
+#   override_script = check|oxlint .   # Override a script's command
 LOCAL_IGNORE_FILES=()
 LOCAL_IGNORE_SCRIPTS=()
 LOCAL_IGNORE_DEPS=()
@@ -387,7 +380,7 @@ if [[ -f .code-style.local ]]; then
   while IFS= read -r line; do
     # Skip comments and blank lines
     [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-    # Parse: ignore_file = .dprint.json
+    # Parse: ignore_file = tsconfig.json
     if [[ "$line" =~ ^ignore_file[[:space:]]*=[[:space:]]*(.+)$ ]]; then
       file_to_ignore="${BASH_REMATCH[1]}"
       file_to_ignore="${file_to_ignore#"${file_to_ignore%%[![:space:]]*}"}"
@@ -399,7 +392,7 @@ if [[ -f .code-style.local ]]; then
       script_to_ignore="${script_to_ignore#"${script_to_ignore%%[![:space:]]*}"}"
       script_to_ignore="${script_to_ignore%"${script_to_ignore##*[![:space:]]}"}"
       LOCAL_IGNORE_SCRIPTS+=("$script_to_ignore")
-    # Parse: ignore_dep = dprint
+    # Parse: ignore_dep = typescript
     elif [[ "$line" =~ ^ignore_dep[[:space:]]*=[[:space:]]*(.+)$ ]]; then
       dep_to_ignore="${BASH_REMATCH[1]}"
       dep_to_ignore="${dep_to_ignore#"${dep_to_ignore%%[![:space:]]*}"}"
@@ -488,17 +481,6 @@ EXPECTED[.oxfmtrc.json]='{
   "ignorePatterns": ["**/*.md"]
 }'
 
-EXPECTED[.dprint.json]='{
-  "markdown": {
-    "textWrap": "maintain",
-    "lineWidth": 10000,
-    "emphasisKind": "underscores",
-    "strongKind": "asterisks"
-  },
-  "includes": ["**/*.md"],
-  "plugins": ["https://plugins.dprint.dev/markdown-0.21.1.wasm"]
-}'
-
 EXPECTED[tsconfig.json]='{
   "compilerOptions": {
     "target": "ES2022",
@@ -532,9 +514,9 @@ EXPECTED[tsconfig.build.json]='{
 
 # Deterministic processing order (avoids bash assoc-array hash-order chaos)
 if [[ $SKIP_OXC == true ]]; then
-  CONFIG_ORDER=(.dprint.json tsconfig.json tsconfig.build.json)
+  CONFIG_ORDER=(tsconfig.json tsconfig.build.json)
 else
-  CONFIG_ORDER=(.oxlintrc.json .oxfmtrc.json .dprint.json tsconfig.json tsconfig.build.json)
+  CONFIG_ORDER=(.oxlintrc.json .oxfmtrc.json tsconfig.json tsconfig.build.json)
 fi
 
 # ── process config files ──────────────────────────────────
@@ -578,13 +560,6 @@ merge_config() {
       jq --argjson new "$new_json" '
         . + $new |
         .ignorePatterns = ((.ignorePatterns // []) | unique)
-      ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
-      ;;
-    .dprint.json)
-      jq --argjson new "$new_json" '
-        .markdown = ((.markdown // {}) + ($new.markdown // {}))       |
-        .includes = ((.includes // []) + ($new.includes // []) | unique) |
-        .plugins  = ((.plugins  // []) + ($new.plugins  // []) | unique)
       ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
       ;;
     tsconfig.json)
@@ -651,12 +626,15 @@ done
 SCRIPT_ORDER=("${FILTERED_SCRIPT_ORDER[@]}")
 
 declare -A SCRIPT_VALUES
-SCRIPT_VALUES[lint]="oxlint --type-aware ."
-SCRIPT_VALUES[lint:fix]="oxlint --type-aware --fix ."
-SCRIPT_VALUES[format]="oxfmt . && dprint fmt --allow-no-files"
-SCRIPT_VALUES[format:check]="oxfmt --check . && dprint check --allow-no-files"
+LINT_PATHS="find -P . -type f -not -path './.git/*' -not -path './node_modules/*' -not -path './dist/*' \\( -name '*.js' -o -name '*.jsx' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.ts' -o -name '*.tsx' -o -name '*.mts' -o -name '*.cts' \\)"
+LINT_COMMAND="$LINT_PATHS -exec oxlint --type-aware {} +"
+LINT_FIX_COMMAND="$LINT_PATHS -exec oxlint --type-aware --fix {} +"
+SCRIPT_VALUES[lint]="$LINT_COMMAND"
+SCRIPT_VALUES[lint:fix]="$LINT_FIX_COMMAND"
+SCRIPT_VALUES[format]="oxfmt ."
+SCRIPT_VALUES[format:check]="oxfmt --check ."
 SCRIPT_VALUES[typecheck]="tsc --noEmit"
-SCRIPT_VALUES[check]="oxlint --type-aware . && oxfmt --check . && dprint check --allow-no-files && tsc --noEmit"
+SCRIPT_VALUES[check]="$LINT_COMMAND && oxfmt --check . && tsc --noEmit"
 
 # Apply script overrides from .code-style.local
 for override in "${LOCAL_OVERRIDE_SCRIPTS[@]}"; do
@@ -681,27 +659,30 @@ for script in "${SCRIPT_ORDER[@]}"; do
   fi
 done
 
-# Build jq expression dynamically based on SCRIPT_ORDER
-JQ_SCRIPTS='.scripts = .scripts // {}'
+# Build the script map with jq args so shell commands can contain quotes and escapes.
+PACKAGE_SNAPSHOT=$(mktemp)
+cp package.json "$PACKAGE_SNAPSHOT"
+SCRIPT_JSON='{}'
 for script in "${SCRIPT_ORDER[@]}"; do
-  value="${SCRIPT_VALUES[$script]}"
-  if [[ "$script" == *:* ]]; then
-    # Script name contains colon, use bracket notation
-    JQ_SCRIPTS+=" | .scripts[\"$script\"] = \"$value\""
-  else
-    JQ_SCRIPTS+=" | .scripts.$script = \"$value\""
-  fi
+  SCRIPT_JSON=$(jq --arg name "$script" --arg value "${SCRIPT_VALUES[$script]}" \
+    '.[$name] = $value' <<<"$SCRIPT_JSON")
 done
 
-jq "$JQ_SCRIPTS" package.json > package.json.tmp && mv package.json.tmp package.json
+jq --argjson scripts "$SCRIPT_JSON" \
+  '.scripts = ((.scripts // {}) * $scripts)' \
+  package.json > package.json.tmp && mv package.json.tmp package.json
+if ! cmp -s package.json "$PACKAGE_SNAPSHOT"; then
+  PACKAGE_CHANGED=true
+fi
+rm -f "$PACKAGE_SNAPSHOT"
 
 # ── install devDependencies ──────────────────────────────
 NEED=()
 if [[ $SKIP_OXC == true ]]; then
-  # Skip oxc dependencies, only install dprint and typescript
-  DEPS_TO_CHECK=(dprint typescript)
+  # Skip oxc dependencies and install only typescript.
+  DEPS_TO_CHECK=(typescript)
 else
-  DEPS_TO_CHECK=(oxlint oxfmt dprint typescript)
+  DEPS_TO_CHECK=(oxlint oxfmt typescript)
 fi
 
 # oxlint-tsgolint is required for --type-aware linting
@@ -732,14 +713,7 @@ for dep in "${DEPS_TO_CHECK[@]}"; do
 done
 
 if [[ ${#NEED[@]} -gt 0 ]]; then
-  INSTALL_ARGS=()
-  for dep in "${NEED[@]}"; do
-    if [[ "$PM_DETECTED" == "vp (vite-plus)" && "$dep" == "dprint" ]]; then
-      INSTALL_ARGS=(--allow-build dprint)
-      break
-    fi
-  done
-  $ADD "${INSTALL_ARGS[@]}" "${NEED[@]}"
+  $ADD "${NEED[@]}"
   DEPS_INSTALLED+=("${NEED[@]}")
   COMMIT_FILES+=("package.json")
   case "$PM_DETECTED" in
@@ -774,7 +748,14 @@ if [[ -d .git ]] && command -v git &>/dev/null; then
     [[ -f "$NEW_FILE" ]] && COMMIT_FILES+=("$NEW_FILE")
   done
   [[ -f ".gitignore" ]] && [[ ${#GITIGNORE_ADDED[@]} -gt 0 ]] && COMMIT_FILES+=(".gitignore")
-  [[ "$PACKAGE_CREATED" == true || ${#SCRIPTS_ADDED[@]} -gt 0 ]] && COMMIT_FILES+=("package.json")
+  [[ "$PACKAGE_CREATED" == true || "$PACKAGE_CHANGED" == true || ${#TOOLS_REMOVED[@]} -gt 0 ]] && COMMIT_FILES+=("package.json")
+  if [[ "$PM_DETECTED" == "vp (vite-plus)" ]]; then
+    for f in pnpm-lock.yaml pnpm-workspace.yaml; do
+      if [[ -f "$f" ]] && ! git ls-files --error-unmatch "$f" &>/dev/null; then
+        COMMIT_FILES+=("$f")
+      fi
+    done
+  fi
 
   # Stage only tracked files
   if [[ ${#COMMIT_FILES[@]} -gt 0 ]]; then
@@ -792,15 +773,15 @@ if [[ -d .git ]] && command -v git &>/dev/null; then
 
 Add strict TypeScript + OXC linting/formatting configuration
 
-- Install oxlint, oxfmt, dprint, typescript
+- Install oxlint, oxfmt, typescript
 - Configure tsconfig with strict mode + noUncheckedIndexedAccess
 - Add lint, format, typecheck, and check scripts
 - Install pre-commit hook for future commits
 - Format bootstrap files before the initial commit
-- Set up .gitignore entries (node_modules, dist, *.tsbuildinfo)
+- Set up .gitignore entries (node_modules, dist, *.tsbuildinfo, .pnpm-store)
 - Enforce single quotes, no semicolons, 100 char line width
 
-Tooling: oxlint (--type-aware) + oxfmt + dprint + tsc
+Tooling: oxlint (--type-aware) + oxfmt + tsc
 EOF
 )
       git commit -m "$COMMIT_MSG" --quiet

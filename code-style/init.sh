@@ -87,6 +87,23 @@ declare -a COMMIT_FILES=()
 HOOK_STATE=""
 PACKAGE_CREATED=false
 PACKAGE_CHANGED=false
+STANDARDS_CREATED=false
+
+# ── repository standards pointer ─────────────────────────
+if [[ ! -e CODING_STANDARDS.md ]]; then
+  cat > CODING_STANDARDS.md <<'EOF'
+# Coding standards
+
+- Repository-specific rules live in [AGENTS.md](AGENTS.md), when present.
+- TypeScript and JavaScript conventions come from the linked `code-style` skill.
+- Executable project settings live in `.oxlintrc.json`, `.oxfmtrc.json`, and `tsconfig.json`.
+- Run the repository's `check` script before committing.
+EOF
+  STANDARDS_CREATED=true
+  info "created CODING_STANDARDS.md"
+else
+  info "preserving existing CODING_STANDARDS.md"
+fi
 
 # ── early checks for existing project ────────────────────
 SKIP_OXC=false
@@ -749,6 +766,7 @@ if [[ -d .git ]] && command -v git &>/dev/null; then
   done
   [[ -f ".gitignore" ]] && [[ ${#GITIGNORE_ADDED[@]} -gt 0 ]] && COMMIT_FILES+=(".gitignore")
   [[ "$PACKAGE_CREATED" == true || "$PACKAGE_CHANGED" == true || ${#TOOLS_REMOVED[@]} -gt 0 ]] && COMMIT_FILES+=("package.json")
+  [[ "$STANDARDS_CREATED" == true ]] && COMMIT_FILES+=("CODING_STANDARDS.md")
   if [[ "$PM_DETECTED" == "vp (vite-plus)" ]]; then
     for f in pnpm-lock.yaml pnpm-workspace.yaml; do
       if [[ -f "$f" ]] && ! git ls-files --error-unmatch "$f" &>/dev/null; then

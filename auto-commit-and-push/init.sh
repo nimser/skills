@@ -16,6 +16,11 @@ if [ -z "$REMOTE_URL" ]; then
   exit 1
 fi
 
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+if [ ! -f "$REPO_ROOT/.agents/skills/pre-commit-failure/SKILL.md" ]; then
+  echo "[auto-commit-and-push] WARNING: pre-commit-failure skill is not linked in $REPO_ROOT/.agents/skills." >&2
+fi
+
 # git@github.com:owner/repo.git -> owner-repo
 # https://github.com/owner/repo.git -> owner-repo
 REPO_SLUG="$(echo "$REMOTE_URL" \

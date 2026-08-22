@@ -626,7 +626,7 @@ done
 SCRIPT_ORDER=("${FILTERED_SCRIPT_ORDER[@]}")
 
 declare -A SCRIPT_VALUES
-LINT_PATHS="find -P . -type f -not -path './.git/*' -not -path './node_modules/*' -not -path './dist/*' \\( -name '*.js' -o -name '*.jsx' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.ts' -o -name '*.tsx' -o -name '*.mts' -o -name '*.cts' \\)"
+LINT_PATHS="find -P . \\( -type d \\( -name .git -o -name node_modules -o -name dist -o -name .pnpm-store \\) -prune \\) -o -type f \\( -name '*.js' -o -name '*.jsx' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.ts' -o -name '*.tsx' -o -name '*.mts' -o -name '*.cts' \\)"
 LINT_COMMAND="$LINT_PATHS -exec oxlint --type-aware {} +"
 LINT_FIX_COMMAND="$LINT_PATHS -exec oxlint --type-aware --fix {} +"
 SCRIPT_VALUES[lint]="$LINT_COMMAND"

@@ -77,20 +77,20 @@ Apply these conventions to every TypeScript/JavaScript file.
 
 These scripts are set up by `code-style/init.sh` and installed as devDependencies (`oxlint`, `oxfmt`, `dprint`, `typescript`, `oxlint-tsgolint`).
 
-> **Note:** `oxlint-tsgolint` is required for `--type-aware` linting. It is automatically installed when lint scripts use `--type-aware`.
+> **Note:** `oxlint-tsgolint` is required for `--type-aware` linting. It is automatically installed when lint scripts use `--type-aware`. When Vite+ is used, init explicitly allows dprint's postinstall build.
 
 | Script           | Command                                              | Purpose                            |
 | ---------------- | ---------------------------------------------------- | ---------------------------------- |
 | `lint`           | `oxlint --type-aware .`                              | Check for lint issues (type-aware) |
 | `lint:fix`       | `oxlint --type-aware --fix .`                        | Auto-fix fixable lint issues       |
-| `format`         | `oxfmt . && dprint fmt`                              | Format code and markdown in place  |
-| `format:check`   | `oxfmt --check . && dprint check`                    | CI / verify formatting is clean    |
+| `format`         | `oxfmt . && dprint fmt --allow-no-files`             | Format code and markdown in place  |
+| `format:check`   | `oxfmt --check . && dprint check --allow-no-files`   | CI / verify formatting is clean    |
 | `typecheck`      | `tsc --noEmit`                                       | Type-check only                    |
-| `check`          | `oxlint --type-aware . && oxfmt --check . && dprint check && tsc --noEmit` | Full gate (lint + format + typecheck) |
+| `check`          | `oxlint --type-aware . && oxfmt --check . && dprint check --allow-no-files && tsc --noEmit` | Full gate (lint + format + typecheck) |
 
 ### Pre-commit hook
 
-`code-style/init.sh` installs a `.git/hooks/pre-commit` hook that runs **`format`** then **`check`** before every commit. Formatting is applied automatically; lint and typecheck must pass for the commit to proceed.
+`code-style/init.sh` installs a `.git/hooks/pre-commit` hook that runs **`format`** then **`check`** before every commit. Formatting is applied automatically; lint and typecheck must pass for the commit to proceed. The hook is installed after the bootstrap commit so empty projects can initialize cleanly.
 
 - **Bypass** (escape hatch): `git commit --no-verify`
 - The hook is interactive during `init.sh` — it asks on existing projects, auto-installs on nimser repos and fresh projects

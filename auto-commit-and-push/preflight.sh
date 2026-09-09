@@ -6,6 +6,10 @@ set -uo pipefail
 TAG="[auto-commit-and-push/preflight]"
 say() { printf '%s %s\n' "$TAG" "$*"; }
 
+PROBE_DIR=""
+cleanup() { [ -n "$PROBE_DIR" ] && rm -rf "$PROBE_DIR"; }
+trap cleanup EXIT
+
 fail() {
   say "$1"
   cat <<'EOF'
@@ -62,9 +66,27 @@ if [ $STATUS -ne 0 ]; then
   fail "SSH agent unreachable or empty (ssh-add -L: ${AGENT_KEYS//$'\n'/ }). The YubiKey-backed signing key is not available."
 fi
 
-if printf '%s\n' "$AGENT_KEYS" | awk '{print $2}' | grep -qxF "$BLOB"; then
-  say "signing key from $SOURCE is loaded in the agent — clear to proceed."
-  exit 0
+if ! printf '%s\n' "$AGENT_KEYS" | awk '{print $2}' | grep -qxF "$BLOB"; then
+  fail "signing key from $SOURCE is NOT loaded in the SSH agent (YubiKey likely unplugged or locked)."
 fi
 
-fail "signing key from $SOURCE is NOT loaded in the SSH agent (YubiKey likely unplugged or locked)."
+# An agent lists sk-* keys whose token is absent, so listing alone proves nothing:
+# only a real signature does. git fails with "agent refused operation" otherwise.
+PROBE_DIR="$(mktemp -d)" || fail "could not create a temporary directory for the signature probe"
+PROBE_KEY="$PROBE_DIR/signer.pub"
+printf '%s\n' "$PUBKEY" > "$PROBE_KEY"
+
+PROBE_ERR="$(printf 'preflight' |
+  timeout 20 ssh-keygen -Y sign -q -n git -f "$PROBE_KEY" - 2>&1 >/dev/null)"
+PROBE_STATUS=$?
+
+if [ $PROBE_STATUS -eq 124 ]; then
+  fail "signature probe timed out after 20s — the key likely requires a touch that nobody confirmed."
+fi
+
+if [ $PROBE_STATUS -ne 0 ]; then
+  fail "signing key from $SOURCE is listed but cannot sign (${PROBE_ERR//$'\n'/ }). Its hardware token is absent or locked."
+fi
+
+say "signing key from $SOURCE signed a probe successfully — clear to proceed."
+exit 0

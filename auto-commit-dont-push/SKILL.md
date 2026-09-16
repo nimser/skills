@@ -1,30 +1,35 @@
 ---
 name: auto-commit-dont-push
-description: ALWAYS load this skill when you complete a significant task, update state, or modify files under the current repo. Configures the workspace for automatic local commits without ever pushing.
+description: ALWAYS load this skill when you complete a significant task, update state, or modify files under the current repo. Runs the commit driver to make a signed local commit and never pushes.
 ---
 
 # Auto Commit, Don't Push
 
-Use this skill when you want the agent to automatically commit changes locally, but **never push** without explicit user instruction.
+One command does the whole chore. It owns the signing pre-flight, the survey, the
+junk-diff and nested-repo gates, the message, staging and hooks.
 
-This is the manual-push alternative to `auto-commit-and-push`. Swap between them depending on project needs.
+```bash
+bun {baseDir}/../_scripts/commit/commit-driver.ts --no-push
+```
 
-## Execution Steps
+Options: `--style fun` for playful messages (default `classic`, or whatever
+`git config agent.commit.style` says), `--message-file -` to write the message
+yourself on stdin instead of having the local model write it, `--dry-run` to see
+the message without committing.
 
-When invoked, execute the following steps in order using your Bash tool:
+## Reading the result
 
-### 1. Perform the following commit ritual
+| Exit | Meaning | What to do |
+|---|---|---|
+| 0 | Committed locally, nothing pushed | Report the subject line. |
+| 3 | Refused by policy | Relay the reason verbatim and stop. Never restage, split or work around it. |
+| 4 | Blocked | Relay the message. Signing: ask the user to plug in or unlock the YubiKey, then retry. Hooks: follow `{baseDir}/../pre-commit-failure/SKILL.md`. |
+| 1 | Harness error | Report it. |
 
-**Push Safety:**
+Never run `git add` or `git commit` yourself for this task, and never push:
+pushing needs an explicit instruction from the user and the sibling
+`auto-commit-and-push` skill. If the driver refuses, the answer is to tell the
+user, not to find another way in.
 
-- NEVER push automatically. Always wait for explicit user instruction.
-- When the user asks to push, confirm the branch and remote before proceeding.
-
-**Auto-Commit Ritual:**
-
-Whenever you complete a significant task, update state, or modify files, you MUST execute the following sequence of tasks in order to save the state locally with a suitable commit message. NEVER push without explicit instruction from the user.
-
-Tasks sequence:
-
-1. [ ] IMPORTANT: To get the proper `<compliant message>` commit message, load and strictly follow the instructions from the `commit-style-fun`, `commit-style-default`, or any available `commit-style*` skill for message style.
-2. [ ] run `git add -A && git commit -m "<compliant message>"` replacing the message based on previous step.
+A nested repository with its own pending work is refused by design: commit it
+from inside that repository first, then run the driver again in the parent.

@@ -8,8 +8,8 @@ These skills are opinionated workflow helpers. They're small, composable, and de
 
 ```
 Git & Commit Workflows
-├── auto-commit-and-push            # touchless git push via deploy key
-├── auto-commit-dont-push           # local-only auto-commit
+├── auto-commit-and-push            # commit driver, pushes via deploy key
+├── auto-commit-dont-push           # commit driver, local commits only
 ├── commit-style-fun                 # playful Conventional Commits style
 └── commit-style-classic             # no-frills Conventional Commits
 
@@ -26,22 +26,27 @@ Utilities
 └── vscode                          # VS Code diffs & file comparison
 ```
 
-## Init Architecture
+## Layout
 
-Each skill directory can contain an `init.sh` script that bootstraps the
-skill's environment — generating keys, registering deploy keys on GitHub,
-configuring git, installing deps, etc.
+Directories starting with `_` are shared code, not skills: agents never load
+them, and startup automation never scans them.
 
 ```
 some-skill/
 ├── SKILL.md          # instructions loaded by the agent
-├── init.sh           # one-shot setup script (idempotent)
+├── init.sh           # one-shot setup script (idempotent), run at agent startup
 └── ...               # helper scripts, configs, etc.
+
+_scripts/             # shared executables several skills call
+└── commit/           # the commit driver, its pre-flight and push-auth setup
 ```
 
 `init.sh` scripts can be automatically executed at agent startup time via a
 wrapper script or via agent plugins (e.g. an opencode plugin), so the agent
-arrives in a ready-to-work state without manual intervention.
+arrives in a ready-to-work state without manual intervention. Setup that only
+some runs need — anything that talks to a remote, mints credentials or depends
+on the task at hand — belongs in `_scripts/`, called on demand by the skill that
+needs it, not in `init.sh`.
 
 ## Installation
 

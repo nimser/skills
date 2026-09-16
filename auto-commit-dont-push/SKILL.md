@@ -9,13 +9,16 @@ One command does the whole chore. It owns the signing pre-flight, the survey, th
 junk-diff and nested-repo gates, the message, staging and hooks.
 
 ```bash
-bun {baseDir}/../_scripts/commit/commit-driver.ts --no-push
+bash {baseDir}/commit.sh
 ```
 
-Options: `--style fun` for playful messages (default `classic`, or whatever
-`git config agent.commit.style` says), `--message-file -` to write the message
-yourself on stdin instead of having the local model write it, `--dry-run` to see
-the message without committing.
+`{baseDir}` is the directory this SKILL.md sits in; use the absolute path you
+read it from. The launcher resolves the driver through symlinked skill trees.
+
+Arguments pass straight through: `--style fun` for playful messages (default
+`classic`, or whatever `git config agent.commit.style` says), `--message-file -`
+to write the message yourself on stdin instead of having the local model write
+it, `--dry-run` to see the message without committing.
 
 ## Reading the result
 

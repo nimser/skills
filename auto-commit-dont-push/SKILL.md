@@ -17,16 +17,22 @@ read it from. The launcher resolves the driver through symlinked skill trees.
 
 Arguments pass straight through: `--style fun` for playful messages (default
 `classic`, or whatever `git config agent.commit.style` says), `--message-file -`
-to write the message yourself on stdin instead of having the local model write
-it, `--dry-run` to see the message without committing.
+for a single caller-written commit, `--plan-file plan.json` for a reviewed
+multi-commit plan, `--dry-run` to inspect the plan without staging.
+
+The local model groups related whole files into commits and may exclude any
+changed file with a reason. Every path must be accounted for exactly once.
+Report exclusions and completed commits, including on failure. Excluded files
+keep their contents and staging state; isolated commit indexes prevent leaks.
+The driver never splits hunks and pushes only after all commits succeed.
 
 ## Reading the result
 
 | Exit | Meaning | What to do |
 |---|---|---|
-| 0 | Committed locally, nothing pushed | Report the subject line. |
-| 3 | Refused by policy | Relay the reason verbatim and stop. Never restage, split or work around it. |
-| 4 | Blocked | Relay the message. Signing: ask the user to plug in or unlock the YubiKey, then retry. Hooks: follow `{baseDir}/../pre-commit-failure/SKILL.md`. |
+| 0 | Completed, dry run, or all files excluded | Report commits and every exclusion; all-excluded plans do not push. |
+| 3 | Refused by policy | Relay the reason and stop; never bypass the gate. |
+| 4 | Blocked | Report completed commits and the blocker; do not reset or retry blindly. |
 | 1 | Harness error | Report it. |
 
 Never run `git add` or `git commit` yourself for this task, and never push:

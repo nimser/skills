@@ -15,10 +15,17 @@ bash {baseDir}/commit.sh
 `{baseDir}` is the directory this SKILL.md sits in; use the absolute path you
 read it from. The launcher resolves the driver through symlinked skill trees.
 
-Arguments pass straight through: `--style fun` for playful messages (default
-`classic`, or whatever `git config agent.commit.style` says), `--message-file -`
-for a single caller-written commit, `--plan-file plan.json` for a reviewed
-multi-commit plan, `--dry-run` to inspect the plan without staging.
+Always start with the default model planner. Arguments pass straight through:
+`--style fun` for playful messages (default `classic`, or whatever
+`git config agent.commit.style` says), `--dry-run` to inspect without staging.
+
+Use `--message-file PATH|-` only after the driver explicitly reports model
+plan/message validation failure after its retries. Never use it preemptively,
+for editorial control, or to bypass policy, connection, signing, hook or drift
+failures. It creates one commit, so use it only when the changes form one
+cohesive group with no exclusions. After validation failure, use a reviewed
+`--plan-file plan.json` instead when separate commits or exclusions are needed;
+do not use that option to bypass model planning either.
 
 The local model groups related whole files into commits and may exclude any
 changed file with a reason. Every path must be accounted for exactly once.

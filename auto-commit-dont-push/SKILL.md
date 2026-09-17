@@ -15,19 +15,37 @@ bash {baseDir}/commit.sh
 `{baseDir}` is the directory this SKILL.md sits in; use the absolute path you
 read it from. The launcher resolves the driver through symlinked skill trees.
 
-Always start with the default model planner. Arguments pass straight through:
-`--style fun` for playful messages (default `classic`, or whatever
-`git config agent.commit.style` says), `--dry-run` to inspect without staging.
+Default to the fully scripted model planner. Use `--style fun` for playful
+messages (default `classic`, or `git config agent.commit.style`), and `--dry-run`
+to preview without staging. Human output includes phase progress, full messages
+and errors. With `--json`, stdout is machine-readable and the human report goes
+to stderr; do not hide that report from the user.
 
-Use `--message-file PATH|-` only after the driver explicitly reports model
-plan/message validation failure after its retries. Never use it preemptively,
-for editorial control, or to bypass policy, connection, signing, hook or drift
-failures. It creates one commit, so use it only when the changes form one
-cohesive group with no exclusions. After validation failure, use a reviewed
-`--plan-file plan.json` instead when separate commits or exclusions are needed;
-do not use that option to bypass model planning either. The driver appends the
-attribution trailer deterministically. Use `--json` for per-attempt
-`plannerDiagnostics`; report the actual errors, not a guessed common cause.
+### Special-case session override
+
+The session LLM may take ownership of bundling and preparation before any
+failed attempt when a concrete limitation warrants it, such as distinct work
+batches touching the same file. Explain the reason and recovery strategy first.
+This is an exceptional/last-resort workflow, not an alternative for convenience
+or editorial control. Read [the advanced workflow](../_scripts/commit/ADVANCED.md)
+from the real skill directory before using it.
+
+`--groups-file PATH|-` fixes the caller's groups and exclusions; the local model
+only generates their messages. Add `--dry-run` for text generation without
+execution. This is whole-file grouping, not hunk splitting. The advanced workflow
+permits carefully preserved patch/stash preparation and, only when necessary,
+manual signed commits; it never waives safety gates, signing, hooks or push policy.
+
+Use `--message-file PATH|-` only after exhausted model validation retries, for one
+cohesive group with no exclusions. Use a reviewed `--plan-file` after validation
+failure when multiple groups or exclusions are needed. Neither is a workaround
+for policy, transport, signing, hook or drift failures. The driver appends the
+attribution trailer. `plannerDiagnostics` records per-attempt errors in JSON;
+report actual failures rather than guessing their cause. For model failures,
+inspect or reproduce with `--debug-dir` pointing outside the repository; it saves
+private request/raw-response artifacts that may contain secrets. Never paste
+those files into reports without review. After a timeout, check active model
+work before retrying; client cancellation does not prove the server stopped.
 
 The local model groups related whole files into commits and may exclude any
 changed file with a reason. Every path must be accounted for exactly once.
@@ -44,10 +62,10 @@ The driver never splits hunks and pushes only after all commits succeed.
 | 4 | Blocked | Report completed commits and the blocker; do not reset or retry blindly. |
 | 1 | Harness error | Report it. |
 
-Never run `git add` or `git commit` yourself for this task, and never push:
-pushing needs an explicit instruction from the user and the sibling
-`auto-commit-and-push` skill. If the driver refuses, the answer is to tell the
-user, not to find another way in.
+Outside the documented session override, never run `git add` or `git commit` yourself
+for this task. Never push under this skill, including during an override: pushing
+requires an explicit user instruction and the sibling push skill. Never disable
+signing or hooks or work around a policy refusal.
 
 A nested repository with its own pending work is refused by design: commit it
 from inside that repository first, then run the driver again in the parent.

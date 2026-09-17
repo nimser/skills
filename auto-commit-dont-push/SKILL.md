@@ -25,7 +25,9 @@ for editorial control, or to bypass policy, connection, signing, hook or drift
 failures. It creates one commit, so use it only when the changes form one
 cohesive group with no exclusions. After validation failure, use a reviewed
 `--plan-file plan.json` instead when separate commits or exclusions are needed;
-do not use that option to bypass model planning either.
+do not use that option to bypass model planning either. The driver appends the
+attribution trailer deterministically. Use `--json` for per-attempt
+`plannerDiagnostics`; report the actual errors, not a guessed common cause.
 
 The local model groups related whole files into commits and may exclude any
 changed file with a reason. Every path must be accounted for exactly once.

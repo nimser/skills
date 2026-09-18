@@ -15,6 +15,9 @@ bash {baseDir}/commit.sh
 `{baseDir}` is the directory this SKILL.md sits in; use the absolute path you
 read it from. The launcher resolves the driver through symlinked skill trees.
 
+Where a `commit` tool is registered, call it instead: it runs the same driver and
+returns every commit and exclusion whole, which shell output invites truncating.
+
 Default to the fully scripted model planner. Use `--style fun` for playful
 messages (default `classic`, or `git config agent.commit.style`), and `--dry-run`
 to preview without staging. Human output includes phase progress, full messages

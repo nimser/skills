@@ -42,9 +42,10 @@ failure when multiple groups or exclusions are needed. Neither is a workaround
 for policy, transport, signing, hook or drift failures. The driver appends the
 attribution trailer. `plannerDiagnostics` records per-attempt errors in JSON;
 report actual failures rather than guessing their cause. For model failures,
-inspect or reproduce with `--debug-dir` pointing outside the repository; it saves
-private request/raw-response artifacts that may contain secrets. Never paste
-those files into reports without review. After a timeout, check active model
+read the capture directory named in the run output, or point `--debug-dir`
+elsewhere outside the repository; it holds private request/raw-response artifacts
+that may contain secrets and expires after 14 days. Never paste those files into
+reports without review. After a timeout, check active model
 work before retrying; client cancellation does not prove the server stopped.
 
 The local model groups related whole files into commits and may exclude any

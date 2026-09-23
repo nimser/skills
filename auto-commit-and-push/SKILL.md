@@ -57,6 +57,11 @@ Report exclusions and completed commits, including on failure. Excluded files
 keep their contents and staging state; isolated commit indexes prevent leaks.
 The driver never splits hunks and pushes only after all commits succeed.
 
+To publish existing commits after a blocked push, run `bash {baseDir}/commit.sh
+--push-only` from a clean, attached branch. The driver verifies that its live
+upstream has not moved and refuses dirty, detached, diverged or up-to-date branches.
+It does not create another commit or invoke the planner.
+
 ## Reading the result
 
 | Exit | Meaning | What to do |

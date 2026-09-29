@@ -59,8 +59,10 @@ The driver never splits hunks and pushes only after all commits succeed.
 
 On a clean tree, ordinary `--push` uses the `--push-only` checks to publish
 existing commits; dry runs and explicit planning options do not use this fallback.
-After a blocked push, `bash {baseDir}/commit.sh --push-only` explicitly publishes
-from a clean, attached branch. The driver verifies that its live upstream has not
+After a blocked push, call the registered `commit` tool with `push: true` and
+`pushOnly: true` (no `style` or `groupsFile`), or run
+`bash {baseDir}/commit.sh --push-only`. This explicitly publishes from a clean,
+attached branch. The driver verifies that its live upstream has not
 moved and refuses dirty, detached, diverged or up-to-date branches. Neither path
 creates another commit or invokes the planner.
 

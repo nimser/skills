@@ -66,6 +66,16 @@ attached branch. The driver verifies that its live upstream has not
 moved and refuses dirty, detached, diverged or up-to-date branches. Neither path
 creates another commit or invokes the planner.
 
+### Certificate and key files
+
+The driver refuses `.pem`, `.key`, `.crt`, `.p12` and similar files unless each is
+declared with `--certificate-declarations PATH|-` (tool: `certificateDeclarations`):
+a JSON array of `{path, sha256, assertion}`. Inspect the file first. Declare
+`no-private-key` only when it holds no private key data; otherwise tell the user
+what it contains and declare `user-approved` only after they explicitly accept the
+commit. Declarations are recorded in the commit message. `.env` files and `id_*`
+SSH keys stay refused.
+
 ## Reading the result
 
 | Exit | Meaning | What to do |

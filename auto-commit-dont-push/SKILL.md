@@ -57,6 +57,16 @@ Report exclusions and completed commits, including on failure. Excluded files
 keep their contents and staging state; isolated commit indexes prevent leaks.
 The driver never splits hunks and pushes only after all commits succeed.
 
+### Certificate and key files
+
+The driver refuses `.pem`, `.key`, `.crt`, `.p12` and similar files unless each is
+declared with `--certificate-declarations PATH|-` (tool: `certificateDeclarations`):
+a JSON array of `{path, sha256, assertion}`. Inspect the file first. Declare
+`no-private-key` only when it holds no private key data; otherwise tell the user
+what it contains and declare `user-approved` only after they explicitly accept the
+commit. Declarations are recorded in the commit message. `.env` files and `id_*`
+SSH keys stay refused.
+
 ## Reading the result
 
 | Exit | Meaning | What to do |

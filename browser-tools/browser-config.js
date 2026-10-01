@@ -115,8 +115,13 @@ export function resolveCdpUrl() {
 
 export async function connectBrowser(puppeteer, timeoutMs = 5000) {
 	const url = resolveCdpUrl();
+	const state = readState();
+	if (state?.mode === "host" && !state.webSocketDebuggerUrl?.startsWith(`ws://127.0.0.1:${state.port}/devtools/browser/`)) {
+		throw new Error("invalid host browser identity; run browser-start.js --host again");
+	}
+	const endpoint = state?.mode === "host" ? { browserWSEndpoint: state.webSocketDebuggerUrl } : { browserURL: url };
 	return Promise.race([
-		puppeteer.connect({ browserURL: url, defaultViewport: null }),
+		puppeteer.connect({ ...endpoint, defaultViewport: null }),
 		new Promise((_, reject) => setTimeout(() => reject(new Error(`timeout connecting to ${url}`)), timeoutMs)),
 	]);
 }

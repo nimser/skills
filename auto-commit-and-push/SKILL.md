@@ -33,7 +33,7 @@ This is an exceptional/last-resort workflow, not an alternative for convenience
 or editorial control. Read [the advanced workflow](../_scripts/commit/ADVANCED.md)
 from the real skill directory before using it.
 
-`--groups-file PATH|-` fixes the caller's groups and exclusions; the local model
+`--groups-file PATH|-` fixes the caller's groups and exclusions; the selected model
 only generates their messages. Add `--dry-run` for text generation without
 execution. This is whole-file grouping, not hunk splitting. The advanced workflow
 permits carefully preserved patch/stash preparation and, only when necessary,
@@ -51,10 +51,27 @@ that may contain secrets and expires after 14 days. Never paste those files into
 reports without review. Planning uses a 90-second total budget and a 30-second
 first-output deadline. The driver permits one fresh timeout retry with reduced
 evidence after compatible llama.cpp slot monitoring reports idle twice; an
-unverified workload blocks recovery. After a blocked timeout, check active model
+unverified workload blocks another local request, not the independent Pi fallback.
+After a blocked timeout, check active model
 work before manually retrying; client cancellation does not prove the server stopped.
 
-The local model groups related whole files into commits and may exclude any
+Local transport errors, timeouts and exhausted validation retries automatically
+switch once to `cpa-openai/gpt-6-luna` with low thinking through Pi's configured
+provider credentials. The fallback has its own bounded planning budget and uses
+the same validation and commit gates; policy, signing, hook, drift and push
+failures never trigger it. This sends the compact repository evidence to that
+provider. Use `--no-fallback` (tool: `noFallback: true`) or
+`COMMIT_DRIVER_FALLBACK_MODEL=none` for local-only work.
+
+Select another planner with `--model provider/model` (tool: `model`) and optional
+`--thinking` (tool: `thinking`, default `low`). An unqualified model ID selects
+the local endpoint. Override the fallback with `--fallback-model provider/model`
+(tool: `fallbackModel`) or `COMMIT_DRIVER_FALLBACK_MODEL`; automatic fallback
+always uses low thinking. Explicit Pi models do not chain to another fallback.
+Model selection stays inside the registered commit tool, never a manual commit.
+Report `plannerFallback` when used and retain both routes' diagnostics.
+
+The planner groups related whole files into commits and may exclude any
 changed file with a reason. Every path must be accounted for exactly once.
 Report exclusions and completed commits, including on failure. Excluded files
 keep their contents and staging state; isolated commit indexes prevent leaks.

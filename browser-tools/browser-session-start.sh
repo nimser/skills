@@ -16,7 +16,7 @@
 # Usage:
 #   browser-session-start.sh --url <URL> [--countries cc[,cc..]] [--rotating]
 #                            [--session-id X] [--ttl N] [--entry VALUE]
-#                            [--minutes N] [--no-proxy]
+#                            [--minutes N] [--no-proxy] [--host]
 #
 # Proxy flags are passed through to the proxy-URL builder command
 # (AGENT_PROXY_URL_CMD; see PROXY.md for the public contract).
@@ -31,6 +31,7 @@ cd "$(dirname "$0")"
 URL=""
 MINUTES=25
 USE_PROXY=1
+USE_HOST=0
 COUNTRIES="${AGENT_PROXY_COUNTRIES:-}"
 ROTATING=0
 SESSION_ID="${AGENT_PROXY_SESSION_ID:-}"
@@ -47,11 +48,15 @@ while [[ $# -gt 0 ]]; do
     --rotating) ROTATING=1; shift;;
     --minutes) MINUTES="$2"; shift 2;;
     --no-proxy) USE_PROXY=0; shift;;
+    --host) USE_HOST=1; shift;;
     *) echo "✗ Unknown arg: $1" >&2; exit 1;;
   esac
 done
 
 [[ -n "$URL" ]] || { echo "✗ --url is required" >&2; exit 1; }
+[[ "$USE_HOST" == 0 || "$USE_PROXY" == 0 ]] \
+  || { echo "✗ --host requires --no-proxy; the host browser does not inherit container proxy settings" >&2; exit 1; }
+if [[ "$USE_PROXY" == 0 ]]; then unset AGENT_HTTPS_PROXY; fi
 
 if [[ "$USE_PROXY" == 1 ]]; then
   PROXY_ARGS=()
@@ -78,9 +83,14 @@ if [[ "$USE_PROXY" == 1 ]]; then
   ./browser-proxy-check.js
 fi
 
-echo "→ Restarting the devpod-local browser to bind the proxy flag..."
-./browser-stop.js || true
-./browser-start.js --profile
+if [[ "$USE_HOST" == 1 ]]; then
+  echo "→ Attaching to the dedicated host Brave profile..."
+  ./browser-start.js --host
+else
+  echo "→ Restarting the devpod-local browser to bind the proxy flag..."
+  ./browser-stop.js || true
+  ./browser-start.js --profile
+fi
 
 echo "→ Navigating to $URL (login is manual if a login form appears)..."
 LOGIN_PENDING=0

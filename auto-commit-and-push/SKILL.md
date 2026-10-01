@@ -48,8 +48,11 @@ report actual failures rather than guessing their cause. For model failures,
 read the capture directory named in the run output, or point `--debug-dir`
 elsewhere outside the repository; it holds private request/raw-response artifacts
 that may contain secrets and expires after 14 days. Never paste those files into
-reports without review. After a timeout, check active model
-work before retrying; client cancellation does not prove the server stopped.
+reports without review. Planning uses a 90-second total budget and a 30-second
+first-output deadline. The driver permits one fresh timeout retry with reduced
+evidence after compatible llama.cpp slot monitoring reports idle twice; an
+unverified workload blocks recovery. After a blocked timeout, check active model
+work before manually retrying; client cancellation does not prove the server stopped.
 
 The local model groups related whole files into commits and may exclude any
 changed file with a reason. Every path must be accounted for exactly once.

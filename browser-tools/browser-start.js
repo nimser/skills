@@ -6,12 +6,31 @@ import { acquireStartupLock, cdpIsLive, cdpUrl, clearState, findAvailablePort, r
 import { getProxyConfig } from "./proxy-util.js";
 
 const useProfile = process.argv.includes("--profile");
+const useHost = process.argv.includes("--host");
 
-if (process.argv.filter((arg) => arg !== "--profile").length > 2) {
-	console.log("Usage: browser-start.js [--profile]");
+if (process.argv.slice(2).some((arg) => !["--profile", "--host"].includes(arg))) {
+	console.log("Usage: browser-start.js [--profile] [--host]");
 	console.log("\nOptions:");
 	console.log("  --profile  Keep the container-local profile for logged-in sessions");
-	process.exitCode = 1;
+	console.log("  --host     Use the dedicated host Brave profile (always persistent)");
+	process.exitCode = process.argv.includes("--help") ? 0 : 1;
+} else if (useHost) {
+	try {
+		if (process.env.AGENT_HTTPS_PROXY) throw new Error("--host does not inherit container proxies; unset AGENT_HTTPS_PROXY to use the host network");
+		const response = await fetch("http://127.0.0.1:19222/start", {
+			method: "POST", headers: { "x-browser-tools": "host-v1" }, signal: AbortSignal.timeout(90_000),
+		});
+		if (!response.ok) throw new Error(await response.text());
+		const state = await response.json();
+		if (state.mode !== "host" || !Number.isInteger(state.port) || state.port < 1 || state.port > 65535
+			|| !state.webSocketDebuggerUrl?.startsWith(`ws://127.0.0.1:${state.port}/devtools/browser/`)
+			|| typeof state.userDataDir !== "string") throw new Error("invalid host launcher response");
+		writeState({ ...state, startedAt: new Date().toISOString() });
+		console.log(`✓ Attached to host Brave on :${state.port}; cookies expire daily at 05:00 host-local time`);
+	} catch (error) {
+		console.error(`✗ Host browser unavailable: ${error.message}. The host needs browser-tools-host.service and this devpod needs host networking.`);
+		process.exitCode = 1;
+	}
 } else {
 	function getBrowserPath() {
 		if (process.platform === "darwin") {
@@ -67,6 +86,7 @@ if (process.argv.filter((arg) => arg !== "--profile").length > 2) {
 	async function existingBrowser() {
 		const state = readState();
 		if (!state) return false;
+		if (state.mode === "host") throw new Error("host mode is recorded; use --host to reconnect or browser-stop.js to detach before local startup");
 		if (await cdpIsLive(state.port)) {
 			console.log(`✓ Browser already running on :${state.port} with container-local profile`);
 			return true;

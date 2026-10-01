@@ -9,6 +9,12 @@ if (!state) {
 	process.exit(0);
 }
 
+if (state.mode === "host") {
+	clearState();
+	console.log("✓ Detached from host Brave; the shared host browser remains open");
+	process.exit(0);
+}
+
 try {
 	if (await cdpIsLive(state.port)) {
 		const browser = await puppeteer.connect({ browserURL: cdpUrl(state.port), defaultViewport: null });

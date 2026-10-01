@@ -35,6 +35,46 @@ Optional environment variables:
 - `BROWSER_CDP_URL` — fallback helper endpoint when no local browser state is
   recorded. The recorded port wins after local startup.
 
+## Host Brave (Linux host-network devpods)
+
+```bash
+{baseDir}/browser-start.js --host
+{baseDir}/browser-nav.js https://example.com
+{baseDir}/browser-stop.js                 # Detach; leave shared host Brave open
+{baseDir}/browser-session-start.sh --host --no-proxy --url https://example.com
+```
+
+`--host` uses the host's dedicated persistent Brave profile, with native YubiKey
+access, browser sandboxing and GPU rendering. It never imports the daily browser
+profile. The host must provide `browser-tools-host.service` on `127.0.0.1:19222`;
+containers need host networking and this skill, not USB devices or new mounts.
+There is no fallback to a container browser when the host is unavailable.
+
+The selected host endpoint is recorded in the same instance-local state used by
+other helpers. Its browser WebSocket identity is pinned: after a browser restart,
+run `browser-start.js --host` again. To switch back to container-local mode, detach
+with `browser-stop.js`, then start without `--host`. Switching to host mode does
+not close an already-running container browser.
+
+All devpods share this host profile and browser: coordinate tab use between
+agents. `browser-stop.js` only detaches in host mode. The session timer is still
+instance-local. Host mode rejects `AGENT_HTTPS_PROXY`; container proxy variables
+cannot configure the shared browser. Bootstrap requires `--host --no-proxy`.
+
+On the managed workstation, cookies are cleared at **05:00 host-local time**,
+with missed cleanup caught up after downtime and before the next launch. Cleanup
+closes only the automation browser and removes its cookie databases, leaving it
+closed. Local storage, IndexedDB, preferences and extensions are preserved.
+Cookie-only cleanup does not guarantee logout from sites that authenticate using
+other storage. Do not use this profile for unfinished overnight work.
+
+Both launcher and CDP are loopback-only, but **every host-network container can
+reach them**. CDP grants access to the automation profile's authenticated sessions.
+The launcher's custom header and origin checks block web-page requests, not local
+processes. Use only trusted agents and keep sensitive daily browsing separate.
+
+Host setup and recovery: `~/.local/lib/browser-tools-host/README.md` on the host.
+
 ## Proxy Support (optional)
 
 `AGENT_HTTPS_PROXY` holds a proxy URL. **Never print, echo, or log its value.**

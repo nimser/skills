@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import puppeteer from "puppeteer-core";
-import { connectBrowser } from "./browser-config.js";
+import { connectBrowser, ownedPage } from "./browser-config.js";
 
 const code = process.argv.slice(2).join(" ");
 if (!code) {
@@ -18,12 +18,7 @@ const b = await connectBrowser(puppeteer).catch((e) => {
 	process.exit(1);
 });
 
-const p = (await b.pages()).at(-1);
-
-if (!p) {
-	console.error("✗ No active tab found");
-	process.exit(1);
-}
+const p = await ownedPage(b);
 
 const result = await p.evaluate((c) => {
 	const AsyncFunction = (async () => {}).constructor;

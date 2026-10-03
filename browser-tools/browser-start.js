@@ -1,24 +1,34 @@
 #!/usr/bin/env node
 
+import puppeteer from "puppeteer-core";
 import { spawn, execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
-import { acquireStartupLock, cdpIsLive, cdpUrl, clearState, findAvailablePort, readState, runtimeDir, userDataDir, waitForCdp, writeState } from "./browser-config.js";
+import { acquireStartupLock, cdpIsLive, cdpUrl, clearState, connectBrowser, ensureOwnedPage, findAvailablePort, hostStartRoute, readState, runtimeDir, userDataDir, waitForCdp, writeState } from "./browser-config.js";
 import { getProxyConfig } from "./proxy-util.js";
 
 const useProfile = process.argv.includes("--profile");
 const useHost = process.argv.includes("--host");
 
-if (process.argv.slice(2).some((arg) => !["--profile", "--host"].includes(arg))) {
-	console.log("Usage: browser-start.js [--profile] [--host]");
+async function pinTab() {
+	const browser = await connectBrowser(puppeteer);
+	try { await ensureOwnedPage(browser); } finally { await browser.disconnect(); }
+}
+
+if (process.argv.slice(2).some((arg) => !["--profile", "--host", "--keep-cookies", "--resume"].includes(arg))
+	|| (!useHost && process.argv.some(arg => ["--keep-cookies", "--resume"].includes(arg)))) {
+	console.log("Usage: browser-start.js [--profile] or --host [--keep-cookies|--resume]");
 	console.log("\nOptions:");
 	console.log("  --profile  Keep the container-local profile for logged-in sessions");
-	console.log("  --host     Use the dedicated host Brave profile (always persistent)");
+	console.log("  --host         Start a clean host session; clear old tabs and website data");
+	console.log("  --keep-cookies Keep website login state, but start with fresh tabs (host only)");
+	console.log("  --resume       Attach without clearing tabs or website data (host only)");
 	process.exitCode = process.argv.includes("--help") ? 0 : 1;
 } else if (useHost) {
 	try {
 		if (process.env.AGENT_HTTPS_PROXY) throw new Error("--host does not inherit container proxies; unset AGENT_HTTPS_PROXY to use the host network");
-		const response = await fetch("http://127.0.0.1:19222/start", {
-			method: "POST", headers: { "x-browser-tools": "host-v1" }, signal: AbortSignal.timeout(90_000),
+		const route = hostStartRoute(process.argv.slice(2));
+		const response = await fetch(`http://127.0.0.1:19222${route}`, {
+			method: "POST", headers: { "x-browser-tools": "host-v1" }, signal: AbortSignal.timeout(120_000),
 		});
 		if (!response.ok) throw new Error(await response.text());
 		const state = await response.json();
@@ -26,7 +36,9 @@ if (process.argv.slice(2).some((arg) => !["--profile", "--host"].includes(arg)))
 			|| !state.webSocketDebuggerUrl?.startsWith(`ws://127.0.0.1:${state.port}/devtools/browser/`)
 			|| typeof state.userDataDir !== "string") throw new Error("invalid host launcher response");
 		writeState({ ...state, startedAt: new Date().toISOString() });
-		console.log(`✓ Attached to host Brave on :${state.port}; cookies expire daily at 05:00 host-local time`);
+		await pinTab();
+		const action = route === "/resume" ? "Resumed host Brave" : route === "/start-keep-cookies" ? "Started fresh host tabs with website state retained" : "Started a clean host session";
+		console.log(`✓ ${action} on :${state.port}; browser settings and extension storage retained`);
 	} catch (error) {
 		console.error(`✗ Host browser unavailable: ${error.message}. The host needs browser-tools-host.service and this devpod needs host networking.`);
 		process.exitCode = 1;
@@ -88,6 +100,7 @@ if (process.argv.slice(2).some((arg) => !["--profile", "--host"].includes(arg)))
 		if (!state) return false;
 		if (state.mode === "host") throw new Error("host mode is recorded; use --host to reconnect or browser-stop.js to detach before local startup");
 		if (await cdpIsLive(state.port)) {
+			await pinTab();
 			console.log(`✓ Browser already running on :${state.port} with container-local profile`);
 			return true;
 		}
@@ -133,6 +146,7 @@ if (process.argv.slice(2).some((arg) => !["--profile", "--host"].includes(arg)))
 			child.unref();
 			await waitForCdp(port);
 			writeState({ port, userDataDir: profile, pid: child.pid, startedAt: new Date().toISOString() });
+			await pinTab();
 			console.log(`✓ ${browserInfo.type} started on :${port} with container-local profile${useProfile ? " (profile mode)" : ""}`);
 			return 0;
 		} catch (error) {

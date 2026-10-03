@@ -3,7 +3,7 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
-import { connectBrowser } from "./browser-config.js";
+import { connectBrowser, ownedPage } from "./browser-config.js";
 
 const b = await connectBrowser(puppeteer).catch((e) => {
 	console.error("✗ Could not connect to browser:", e.message);
@@ -11,18 +11,13 @@ const b = await connectBrowser(puppeteer).catch((e) => {
 	process.exit(1);
 });
 
-const p = (await b.pages()).at(-1);
-
-if (!p) {
-	console.error("✗ No active tab found");
-	process.exit(1);
-}
+const p = await ownedPage(b);
 
 const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 const filename = `screenshot-${timestamp}.png`;
 const filepath = join(tmpdir(), filename);
 
-await p.screenshot({ path: filepath });
+await p.screenshot({ path: filepath, fromSurface: true, captureBeyondViewport: false });
 
 console.log(filepath);
 

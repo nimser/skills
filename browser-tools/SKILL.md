@@ -38,40 +38,57 @@ Optional environment variables:
 ## Host Brave (Linux host-network devpods)
 
 ```bash
-{baseDir}/browser-start.js --host
+{baseDir}/browser-start.js --host                 # Fresh tabs, clean website state
+{baseDir}/browser-start.js --host --keep-cookies  # Fresh tabs, retain logins
+{baseDir}/browser-start.js --host --resume        # Reattach without resetting
 {baseDir}/browser-nav.js https://example.com
 {baseDir}/browser-stop.js                 # Detach; leave shared host Brave open
 {baseDir}/browser-session-start.sh --host --no-proxy --url https://example.com
 ```
 
-`--host` uses the host's dedicated persistent Brave profile, with native YubiKey
-access, browser sandboxing and GPU rendering. It never imports the daily browser
-profile. The host must provide `browser-tools-host.service` on `127.0.0.1:19222`;
+`--host` uses the host's named **Automation** Brave jail, with Firejail,
+bubblewrap, native YubiKey access, Brave sandboxing and GPU rendering. Its initial
+theme is Chrome light blue; it inherits the shared extension-installation defaults
+without sharing extension storage or daily-browser accounts. The host must provide `browser-tools-host.service` on `127.0.0.1:19222`;
 containers need host networking and this skill, not USB devices or new mounts.
 There is no fallback to a container browser when the host is unavailable.
 
 The selected host endpoint is recorded in the same instance-local state used by
 other helpers. Its browser WebSocket identity is pinned: after a browser restart,
-run `browser-start.js --host` again. To switch back to container-local mode, detach
+run `browser-start.js --host --resume` again. To switch back to container-local mode, detach
 with `browser-stop.js`, then start without `--host`. Switching to host mode does
 not close an already-running container browser.
 
-All devpods share this host profile and browser: coordinate tab use between
-agents. `browser-stop.js` only detaches in host mode. The session timer is still
+All devpods share this host profile and browser: coordinate new-session resets;
+additional agents use `--resume`. Each instance pins an owned tab ID in
+`owned-tab.json`; helpers never select the user's or last tab. New tabs open in
+the background, and closed owned tabs fail safely until replaced with `--new`.
+`browser-stop.js` only detaches in host mode. The session timer is still
 instance-local. Host mode rejects `AGENT_HTTPS_PROXY`; container proxy variables
 cannot configure the shared browser. Bootstrap requires `--host --no-proxy`.
 
-On the managed workstation, cookies are cleared at **05:00 host-local time**,
-with missed cleanup caught up after downtime and before the next launch. Cleanup
-closes only the automation browser and removes its cookie databases, leaving it
-closed. Local storage, IndexedDB, preferences and extensions are preserved.
-Cookie-only cleanup does not guarantee logout from sites that authenticate using
-other storage. Do not use this profile for unfinished overnight work.
+Default host starts clear saved tabs and website cookies, local storage,
+IndexedDB, service workers and caches; browser settings and extension storage
+remain. `--keep-cookies` retains website storage while starting fresh tabs.
+`--resume` preserves the active session. A new session resets the shared browser
+for every devpod. Cleanup failure blocks a clean start.
+
+The host's Niri rule opens Automation windows unfocused. Helpers do not activate
+tabs or windows; screenshots capture the unshown owned page. Select the agent's
+tab manually for login or element picking. Background tabs suspend visibility
+observers; use DOM clicks or `browser-click-xy.js` instead of Puppeteer element
+clicks that wait for IntersectionObserver.
 
 Both launcher and CDP are loopback-only, but **every host-network container can
 reach them**. CDP grants access to the automation profile's authenticated sessions.
 The launcher's custom header and origin checks block web-page requests, not local
 processes. Use only trusted agents and keep sensitive daily browsing separate.
+
+The profile is `~/.config/BraveJails/automation/Default`. Inside its jail,
+`~/Downloads` maps to host `~/Downloads/automation` and `/var/tmp` maps to host
+`/var/tmp/automation`. Only `~/Share` is granted as an extra home folder; move
+browser downloads into Share for container file access. The `automation` command
+and `Brave (automation)` desktop entry launch the same service-owned browser.
 
 Host setup and recovery: `~/.local/lib/browser-tools-host/README.md` on the host.
 
@@ -159,8 +176,8 @@ state written by `browser-start.js`.
 {baseDir}/browser-nav.js https://example.com --no-login-wait
 ```
 
-Navigate to URLs. Use `--new` to open a new tab instead of reusing the current
-one. On a login wall, navigation pauses for the manual-login window and exits
+Navigate the owned tab. Use `--new` to own a new background tab instead of
+reusing it. On a login wall, navigation pauses for the manual-login window and exits
 with code 2 if the wall is still up; `--no-login-wait` skips that pause.
 
 ## Login Walls (manual login, 50s window)
@@ -170,7 +187,7 @@ login wall (password field, one-time-code prompt, auth URL, sign-in-only page)
 and wait up to 50 seconds for the user to sign in in the visible browser.
 
 ```bash
-{baseDir}/browser-login-wait.js              # wait on the active tab
+{baseDir}/browser-login-wait.js              # wait on the owned tab
 {baseDir}/browser-login-wait.js --seconds 90 # longer window
 ```
 
@@ -196,7 +213,7 @@ no-input grace, `BROWSER_LOGIN_MAX_WAIT_MS` the ceiling.
 {baseDir}/browser-eval.js 'document.querySelectorAll("a").length'
 ```
 
-Execute JavaScript in the active tab. Code runs in async context.
+Execute JavaScript in the owned tab. Code runs in async context.
 
 ## Screenshot
 
@@ -204,7 +221,7 @@ Execute JavaScript in the active tab. Code runs in async context.
 {baseDir}/browser-screenshot.js
 ```
 
-Capture the current viewport and return a temporary file path.
+Capture the owned tab's viewport without taking focus and return a temporary file path.
 
 ## Pick Elements
 
@@ -221,7 +238,7 @@ selections with Cmd/Ctrl-click and finishes with Enter.
 {baseDir}/browser-cookies.js
 ```
 
-Display cookies for the current tab, including domain, path, and security flags.
+Display cookies for the owned tab, including domain, path, and security flags.
 
 ## Extract Page Content
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Pause for a manual login on the active tab. Exit 0 when no login wall is
+// Pause for a manual login on the owned tab. Exit 0 when no login wall is
 // present or the user signed in; exit 2 when the wait window expired.
 
 import puppeteer from "puppeteer-core";
-import { connectBrowser } from "./browser-config.js";
+import { connectBrowser, ownedPage } from "./browser-config.js";
 import { DEFAULT_LOGIN_WAIT_MS, waitForManualLogin } from "./login-wait.js";
 
 const args = process.argv.slice(2);
@@ -27,14 +27,9 @@ const b = await connectBrowser(puppeteer).catch((e) => {
 	process.exit(1);
 });
 
-const p = (await b.pages()).at(-1);
-if (!p) {
-	console.error("✗ No active tab found");
-	process.exit(1);
-}
-
+const p = await ownedPage(b);
 const result = await waitForManualLogin(p, { timeoutMs, log: console.log });
 await b.disconnect();
 
-if (!result.loginWall) console.log("✓ No login wall on the active tab.");
+if (!result.loginWall) console.log("✓ No login wall on the owned tab.");
 process.exit(result.resolved ? 0 : 2);

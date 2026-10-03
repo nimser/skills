@@ -16,7 +16,7 @@
 # Usage:
 #   browser-session-start.sh --url <URL> [--countries cc[,cc..]] [--rotating]
 #                            [--session-id X] [--ttl N] [--entry VALUE]
-#                            [--minutes N] [--no-proxy] [--host]
+#                            [--minutes N] [--no-proxy] [--host] [--keep-cookies]
 #
 # Proxy flags are passed through to the proxy-URL builder command
 # (AGENT_PROXY_URL_CMD; see PROXY.md for the public contract).
@@ -32,6 +32,7 @@ URL=""
 MINUTES=25
 USE_PROXY=1
 USE_HOST=0
+KEEP_COOKIES=0
 COUNTRIES="${AGENT_PROXY_COUNTRIES:-}"
 ROTATING=0
 SESSION_ID="${AGENT_PROXY_SESSION_ID:-}"
@@ -49,11 +50,14 @@ while [[ $# -gt 0 ]]; do
     --minutes) MINUTES="$2"; shift 2;;
     --no-proxy) USE_PROXY=0; shift;;
     --host) USE_HOST=1; shift;;
+    --keep-cookies) KEEP_COOKIES=1; shift;;
     *) echo "✗ Unknown arg: $1" >&2; exit 1;;
   esac
 done
 
 [[ -n "$URL" ]] || { echo "✗ --url is required" >&2; exit 1; }
+[[ "$KEEP_COOKIES" == 0 || "$USE_HOST" == 1 ]] \
+  || { echo "✗ --keep-cookies requires --host" >&2; exit 1; }
 [[ "$USE_HOST" == 0 || "$USE_PROXY" == 0 ]] \
   || { echo "✗ --host requires --no-proxy; the host browser does not inherit container proxy settings" >&2; exit 1; }
 if [[ "$USE_PROXY" == 0 ]]; then unset AGENT_HTTPS_PROXY; fi
@@ -84,8 +88,10 @@ if [[ "$USE_PROXY" == 1 ]]; then
 fi
 
 if [[ "$USE_HOST" == 1 ]]; then
-  echo "→ Attaching to the dedicated host Brave profile..."
-  ./browser-start.js --host
+  echo "→ Starting a fresh-tab host Brave session..."
+  HOST_ARGS=(--host)
+  [[ "$KEEP_COOKIES" == 0 ]] || HOST_ARGS+=(--keep-cookies)
+  ./browser-start.js "${HOST_ARGS[@]}"
 else
   echo "→ Restarting the devpod-local browser to bind the proxy flag..."
   ./browser-stop.js || true

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import puppeteer from "puppeteer-core";
-import { connectBrowser } from "./browser-config.js";
+import { connectBrowser, ownedPage } from "./browser-config.js";
 import { authenticatePage } from "./proxy-util.js";
 import { waitForManualLogin } from "./login-wait.js";
 import { Readability } from "@mozilla/readability";
@@ -33,12 +33,7 @@ const b = await connectBrowser(puppeteer).catch((e) => {
 	process.exit(1);
 });
 
-const p = (await b.pages()).at(-1);
-if (!p) {
-	console.error("✗ No active tab found");
-	process.exit(1);
-}
-
+const p = await ownedPage(b);
 await authenticatePage(p);
 await Promise.race([
 	p.goto(url, { waitUntil: "networkidle2" }),

@@ -1,12 +1,7 @@
 #!/usr/bin/env node
-// One-off helper: real (CDP) mouse click at viewport coordinates. Needed when
-// the target page uses closed shadow DOM (script-based clicks can't reach
-// inside), so we simulate genuine user input instead — works regardless of
-// encapsulation, same as a real click.
-//
-// Usage: browser-click-xy.js <x> <y>
+// Dispatch a viewport CDP click to the owned tab, including closed shadow DOM.
 import puppeteer from "puppeteer-core";
-import { connectBrowser } from "./browser-config.js";
+import { connectBrowser, ownedPage } from "./browser-config.js";
 
 const [xArg, yArg] = process.argv.slice(2);
 const x = Number(xArg), y = Number(yArg);
@@ -16,8 +11,7 @@ if (!Number.isFinite(x) || !Number.isFinite(y)) {
 }
 
 const browser = await connectBrowser(puppeteer);
-const pages = await browser.pages();
-const page = pages[pages.length - 1];
+const page = await ownedPage(browser);
 await page.mouse.click(x, y);
 await browser.disconnect();
 console.log(`Clicked at (${x}, ${y})`);

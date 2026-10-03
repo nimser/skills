@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
+import { randomUUID } from "node:crypto";
 
 const DEFAULT_PORT = 9222;
 const MAX_PORT = 65535;
@@ -32,6 +33,14 @@ export function stateFile() {
 
 function lockFile() {
 	return path.join(os.tmpdir(), "browser-tools", "startup.lock");
+}
+
+export function hostStartRoute(args) {
+	if (!args.includes("--host") || args.some(arg => !["--host", "--keep-cookies", "--resume"].includes(arg))
+		|| new Set(args).size !== args.length || (args.includes("--keep-cookies") && args.includes("--resume"))) {
+		throw new Error("Use --host [--keep-cookies|--resume]; --profile is container-local only");
+	}
+	return args.includes("--resume") ? "/resume" : args.includes("--keep-cookies") ? "/start-keep-cookies" : "/start";
 }
 
 export function cdpUrl(port) {
@@ -66,8 +75,70 @@ export function writeState(state) {
 	fs.renameSync(temporary, stateFile());
 }
 
+function ownedTabFile() {
+	return path.join(runtimeDir(), "owned-tab.json");
+}
+
 export function clearState() {
 	fs.rmSync(stateFile(), { force: true });
+	fs.rmSync(ownedTabFile(), { force: true });
+}
+
+async function targetId(target) {
+	const client = await target.createCDPSession();
+	try {
+		return (await client.send("Target.getTargetInfo")).targetInfo.targetId;
+	} finally {
+		await client.detach();
+	}
+}
+
+function saveOwnedTab(browser, id) {
+	fs.mkdirSync(runtimeDir(), { recursive: true, mode: 0o700 });
+	const temporary = `${ownedTabFile()}.${process.pid}.tmp`;
+	fs.writeFileSync(temporary, JSON.stringify({ endpoint: browser.wsEndpoint(), targetId: id }) + "\n", { mode: 0o600 });
+	fs.renameSync(temporary, ownedTabFile());
+}
+
+export async function ownedPage(browser) {
+	let saved;
+	try { saved = JSON.parse(fs.readFileSync(ownedTabFile(), "utf8")); } catch {}
+	if (!saved || saved.endpoint !== browser.wsEndpoint() || typeof saved.targetId !== "string") {
+		throw new Error("No owned tab for this browser; run browser-start.js --host --resume or browser-nav.js <URL> --new");
+	}
+	for (const target of browser.targets()) {
+		if (target.type() !== "page") continue;
+		let id;
+		try { id = await targetId(target); } catch { continue; }
+		if (id === saved.targetId) {
+			const page = await target.page();
+			if (page) return page;
+		}
+	}
+	throw new Error("The owned tab was closed; use browser-nav.js <URL> --new. Other tabs were not selected");
+}
+
+export async function newOwnedPage(browser) {
+	const client = await browser.target().createCDPSession();
+	const url = `about:blank#browser-tools-${randomUUID()}`;
+	let id;
+	try {
+		({ targetId: id } = await client.send("Target.createTarget", { url, background: true }));
+		const target = await browser.waitForTarget(candidate => candidate.type() === "page" && candidate.url() === url, { timeout: 5000 });
+		const page = await target.page();
+		if (!page) throw new Error("The owned background tab is unavailable");
+		saveOwnedTab(browser, id);
+		return page;
+	} catch (error) {
+		if (id) await client.send("Target.closeTarget", { targetId: id }).catch(() => {});
+		throw error;
+	} finally {
+		await client.detach();
+	}
+}
+
+export async function ensureOwnedPage(browser) {
+	try { return await ownedPage(browser); } catch { return newOwnedPage(browser); }
 }
 
 export async function cdpIsLive(port) {
@@ -117,7 +188,7 @@ export async function connectBrowser(puppeteer, timeoutMs = 5000) {
 	const url = resolveCdpUrl();
 	const state = readState();
 	if (state?.mode === "host" && !state.webSocketDebuggerUrl?.startsWith(`ws://127.0.0.1:${state.port}/devtools/browser/`)) {
-		throw new Error("invalid host browser identity; run browser-start.js --host again");
+		throw new Error("invalid host browser identity; run browser-start.js --host --resume");
 	}
 	const endpoint = state?.mode === "host" ? { browserWSEndpoint: state.webSocketDebuggerUrl } : { browserURL: url };
 	return Promise.race([

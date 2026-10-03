@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import puppeteer from "puppeteer-core";
-import { connectBrowser } from "./browser-config.js";
+import { connectBrowser, ownedPage } from "./browser-config.js";
 
 const message = process.argv.slice(2).join(" ");
 if (!message) {
@@ -17,14 +17,9 @@ const b = await connectBrowser(puppeteer).catch((e) => {
 	process.exit(1);
 });
 
-const p = (await b.pages()).at(-1);
+const p = await ownedPage(b);
 
-if (!p) {
-	console.error("✗ No active tab found");
-	process.exit(1);
-}
-
-// Inject pick() helper into current page
+// Inject the picker into the owned page.
 await p.evaluate(() => {
 	if (!window.pick) {
 		window.pick = async (message) => {

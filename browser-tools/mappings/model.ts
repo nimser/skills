@@ -5,6 +5,7 @@ export interface Target {
   selector: string;
   tag?: string;
   type?: string;
+  text?: string;
 }
 
 export interface ElementMapping extends Target {
@@ -46,10 +47,11 @@ function text(value: unknown, path: string, max = 500): asserts value is string 
 
 function target(value: unknown, path: string, element = false) {
   const item = object(value, path);
-  keys(item, ["selector", "tag", "type", ...(element ? ["risk", "required"] : [])], path);
+  keys(item, ["selector", "tag", "type", "text", ...(element ? ["risk", "required"] : [])], path);
   text(item.selector, `${path}.selector`);
   if (item.tag !== undefined && (typeof item.tag !== "string" || !/^[a-z][a-z0-9-]*$/.test(item.tag))) fail(`${path}.tag`);
   if (item.type !== undefined) text(item.type, `${path}.type`, 40);
+  if (item.text !== undefined) text(item.text, `${path}.text`);
   if (element && (!risks.includes(item.risk as Risk) || typeof item.required !== "boolean")) fail(path);
 }
 

@@ -4,7 +4,9 @@ import { fixtureMappings } from "./fixture.ts";
 
 describe("mapping schema", () => {
   test("accepts observed pages and an empty inventory", () => {
-    expect(parseMappings(fixtureMappings()).version).toBe(1);
+    const observed = fixtureMappings();
+    observed.pages.editor!.elements.save!.text = "Save";
+    expect(parseMappings(observed).version).toBe(1);
     expect(parseMappings({ version: 1, pages: {} }).pages).toEqual({});
   });
 
@@ -19,6 +21,8 @@ describe("mapping schema", () => {
     (value: any) => { value.pages.editor.observedAt = "2026-02-30T00:00:00.000Z"; },
     (value: any) => { value.pages.editor.elements.title.value = "private input"; },
     (value: any) => { value.pages.editor.elements.save.risk = "safe"; },
+    (value: any) => { value.pages.editor.elements.save.text = ""; },
+    (value: any) => { value.pages.editor.elements.save.text = 42; },
     (value: any) => { value.pages.editor.script = "document.querySelector('#save').click()"; },
     (value: any) => { value.pages.editor.notes = [""]; },
   ])("rejects unsupported or unsafe structure %#", mutate => {

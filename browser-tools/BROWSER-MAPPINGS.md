@@ -65,6 +65,7 @@ unknown keys but cannot establish that arbitrary text is free of private data.
         "save": {
           "selector": "form[data-testid='editor'] button[type='submit']",
           "tag": "button",
+          "text": "Save",
           "risk": "persist",
           "required": true
         }
@@ -89,6 +90,11 @@ unknown keys but cannot establish that arbitrary text is free of private data.
   scoped ARIA attributes. Avoid generated classes, `nth-child`, coordinates,
   content-based personal identifiers and broad selectors matching several nodes.
 - `tag` and `type` are optional expected tag and explicit `type` attribute.
+- `text` optionally filters CSS matches by exact `textContent`, with collapsed
+  whitespace, trimming and Unicode NFC normalization. Matching remains
+  case-sensitive; no substring or fuzzy fallback is used. Store only public UI
+  labels, never submitted content or personal names. Hidden duplicates still
+  cause ambiguity. This is not an accessible-name implementation.
 - `required` means present in this UI state, not HTML form validation. Optional
   absence is allowed; optional ambiguity, hidden matches and mismatches block.
 - `risk` is `read`, `local-edit`, `persist`, `publish` or `delete`. Use `persist`
@@ -97,10 +103,13 @@ unknown keys but cannot establish that arbitrary text is free of private data.
   Explain rich-editor behavior or limitations in a project skill when needed.
 
 Mappings contain no executable selectors, action snippets or automatic fallbacks.
-CSS `:contains()` is not supported. Role/label locators used by Playwright can be
-explained in a project skill; do not pretend they are CSS. The checker only
-supports the main document's light DOM, not iframes or shadow roots. For those,
-inspect the actual frame/root and use a reviewed site-specific adapter.
+CSS `:contains()` is not supported. Use `text` to distinguish buttons or tabs
+without generated IDs. Preserve that exact constraint when acting: checking a
+filtered target does not make its raw CSS selector unique. Role/label locators
+used by Playwright can be explained in a project skill; do not pretend they are
+CSS. The checker only supports the main document's light DOM, not iframes or
+shadow roots. For those, inspect the actual frame/root and use a reviewed
+site-specific adapter.
 
 ## CLI
 

@@ -90,6 +90,24 @@ describe("read-only live DOM checks on a loopback fixture", () => {
     expect((await page.evaluate(probePage, { ...mapping, markers: [{ selector: "#missing" }] }, "title")).context).toBe("marker-mismatch");
   });
 
+  test("filters exact structural text without guessing among buttons or leaking labels", async () => {
+    await page.setContent(html + '<button type="submit">Publish</button><button type="button">  Re\u0301fe\u0301rentiels\n </button>');
+    const mapping = fixtureMappings(server.url.origin).pages.editor!;
+    mapping.elements.save = { selector: "button[type=submit]", text: "Save", risk: "persist", required: true };
+    mapping.markers.push({ selector: "button[type=button]", text: "Référentiels" });
+    const result = await page.evaluate(probePage, mapping, "save");
+    expect(result.ok).toBe(true);
+    expect(result.elements.save?.matches).toBe(1);
+    expect(JSON.stringify(result)).not.toContain("Publish");
+    mapping.elements.save.text = "save";
+    expect((await page.evaluate(probePage, mapping, "save")).elements.save?.status).toBe("missing");
+    mapping.elements.save.text = "Sav";
+    expect((await page.evaluate(probePage, mapping, "save")).ok).toBe(false);
+    mapping.elements.save.text = "Save";
+    await page.setContent(html + '<button type="submit" hidden>Save</button><button type="button">Référentiels</button>');
+    expect((await page.evaluate(probePage, mapping, "save")).elements.save?.status).toBe("ambiguous");
+  });
+
   test("blocks invalid CSS, including non-standard :contains selectors", async () => {
     await page.setContent(html);
     const mapping = fixtureMappings(server.url.origin).pages.editor!;

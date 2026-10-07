@@ -29,6 +29,11 @@ export function probePage(mapping: PageMapping, elementKey?: string): PageCheck 
     let matches: Element[];
     try { matches = Array.from(document.querySelectorAll(target.selector)); }
     catch { return { status: "invalid-selector", matches: 0, visible: 0, enabled: false }; }
+    if (target.text !== undefined) {
+      const normalize = (value: string) => value.replace(/\s+/gu, " ").trim().normalize("NFC");
+      const expected = normalize(target.text);
+      matches = matches.filter(element => normalize(element.textContent ?? "") === expected);
+    }
     const shown = matches.filter(visible);
     const element = matches[0];
     const enabled = !!element && !element.matches(":disabled, [aria-disabled='true']") && !element.closest("[inert]");

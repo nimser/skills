@@ -15,7 +15,7 @@ Git & Commit Workflows
 
 Web & Browser
 ├── brave-search                    # web search via Brave API
-├── browser-tools                   # Chrome DevTools Protocol automation
+├── browser-tools                   # CDP automation, page mappings and paced helpers
 └── youtube-transcript              # YouTube transcript fetcher
 
 

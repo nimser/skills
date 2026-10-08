@@ -39,11 +39,18 @@ execution. This is whole-file grouping, not hunk splitting. The advanced workflo
 permits carefully preserved patch/stash preparation and, only when necessary,
 manual signed commits; it never waives safety gates, signing, hooks or push policy.
 
-Use `--message-file PATH|-` only after exhausted model validation retries, for one
-cohesive group with no exclusions. Use a reviewed `--plan-file` after validation
-failure when multiple groups or exclusions are needed. Neither is a workaround
-for policy, transport, signing, hook or drift failures. The driver appends the
-attribution trailer. `plannerDiagnostics` records per-attempt errors in JSON;
+Let the driver write messages; never take over for preferred wording or a large
+diff. Large evidence uses bounded excerpts and automatic grouping/message passes.
+Use `--message-file PATH|-` for one cohesive group with no exclusions, or a reviewed
+`--plan-file PATH|-` for a complete plan, only after exhausted model validation.
+Both require `--recovery ID` (tool: `messageFile`/`planFile` and `recovery`) with the
+receipt returned for `planner-validation-exhausted`. Inspect diagnostics and
+explain the recovery first. Receipts bind the repository, HEAD, index, files and
+style, expire after 24 hours, and are consumed before execution; `--dry-run`
+(tool: `dryRun`) preserves them. Fixed groups and exclusions cannot change.
+Policy, resource limits, transport, signing, hook and drift failures never permit
+manual-message recovery. The driver appends the attribution trailer.
+`plannerDiagnostics` records per-attempt errors in JSON;
 report actual failures rather than guessing their cause. For model failures,
 read the capture directory named in the run output, or point `--debug-dir`
 elsewhere outside the repository; it holds private request/raw-response artifacts

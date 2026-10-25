@@ -16,8 +16,11 @@ Offline coverage uses fake browser pipes and includes a real Puppeteer client
 against a fake protocol peer. It verifies passive/foreground/direct separation,
 ownership, expiry/revocation, reconnects, discovery and timer checks, not real
 Brave behavior, a compositor, GPU, sandbox or Firejail/bubblewrap pipe inheritance.
-**Live supported-runtime and desktop focus acceptance remain pending.** No new
-background action class may be enabled by inference from fake/headless tests.
+**Complete live regression and desktop focus acceptance remain blocked.** The
+direct-to-scoped tab-lifecycle regression times out after a Puppeteer session;
+disconnecting a gateway peer does not clear browser-root auto-attachment state.
+Do not accept mixed-mode reuse or enable new background actions from isolated
+successes or fake/headless tests.
 
 ## Transport
 
@@ -103,6 +106,34 @@ connection or grant. Do not resume typing or declare an uncertain mutation absen
 because approval expired. Inspect before retrying; never restore focus, close
 windows, renew grants or restart browsers automatically.
 
+## Fixture-only foreground regression
+
+After approval for a dedicated desktop window, run:
+
+```sh
+BROWSER_TOOLS_DESKTOP_TEST_APPROVED=1 bun ~/skills/browser-tools/focus/regression.ts
+```
+
+`regression.ts` creates fresh `focus-fixture-*` Automation-equivalent jails and
+isolated gateway/client runtimes. `BROWSER_TOOLS_TEST_LAUNCHER` can name an absolute
+TypeScript launcher source for testing without replacing the installed launcher.
+The launcher must preserve CDP descriptors with Firejail `--keep-fd=3,4`, not bare
+`--keep-fd` or `--keep-fd=all`.
+
+The runner exercises ordinary Puppeteer with WebSocket and HTTP discovery,
+scoped interaction, navigation/reload, owned-tab lifecycle, popups, a local login
+wall, DOM/picker changes, screenshots, autosave, revocation/expiry and passive
+mode denial. A separate jailed decoy provides a compositor-focus comparator.
+Native namespace/seccomp and GPU checks remain enabled. Deliberate activation
+is confined to fixture windows; there is no global input or personal-window
+restoration. Fixture leases share one four-minute deadline; cleanup stops only
+fixture processes and removes their grants. Failures abort the matrix.
+
+Reports retain versions, booleans and structural counts, not screenshots or
+input text. CDP-generated trusted input is not physical-keyboard redirection
+coverage. Physical typing, FIDO authentication/hotplug and arbitrary delayed
+focus effects need their own manual acceptance. A partial matrix is not a pass.
+
 ## Desktop acceptance
 
 Obtain separate explicit approval for a dedicated foreground window, affected
@@ -140,6 +171,13 @@ contents, credentials, account IDs, screenshots or runtime endpoints.
 On denial, use the passive allowlist or API/CLI; ask before upgrading. Closed or
 mismatched pins require an explicit replacement. An uncertain edit needs
 inspection, not replay. Direct mode changes the trust scope, not the recovery rule.
+
+Do not hand a direct-CDP browser generation to a scoped mutation task until
+protocol-session lifetime isolation and the complete mixed-mode matrix pass.
+A new lease does not reconcile browser-root discovery, debugger waits or
+attachments. Use an explicitly approved shutdown and fresh bounded launch for
+mode handoff; never resume foreign targets or reset browser-wide state as a
+silent fallback after revocation.
 
 A failed launch consumes its ticket. Inspect service/jail/descriptor support and
 request a fresh bounded window only after resolving the failure. A stale launch

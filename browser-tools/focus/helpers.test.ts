@@ -4,8 +4,19 @@ import {detectLoginWall} from "../login-wait.js";
 import {requestHostResume} from "./host.js";
 import {FOCUS_PROTOCOL} from "./client.js";
 import {modeEndpoint, startOptions} from "./mode.js";
+import {foregroundRegression} from "./regression.ts";
 
 const status = {focusProtocol: FOCUS_PROTOCOL, defaultMode: "background", backgroundPolicy: "passive-dom-v1", foregroundLeases: true, directCdp: true};
+
+test("live foreground regression requires separate desktop approval before creating fixtures", async () => {
+  const previous = process.env.BROWSER_TOOLS_DESKTOP_TEST_APPROVED;
+  delete process.env.BROWSER_TOOLS_DESKTOP_TEST_APPROVED;
+  try { await expect(foregroundRegression()).rejects.toThrow("dedicated live fixture regression window"); }
+  finally {
+    if (previous === undefined) delete process.env.BROWSER_TOOLS_DESKTOP_TEST_APPROVED;
+    else process.env.BROWSER_TOOLS_DESKTOP_TEST_APPROVED = previous;
+  }
+});
 
 test("login detection propagates denied/uncertain evaluation instead of bypassing policy", async () => {
   const page = {url: () => "https://example.test", evaluate: async () => { throw new Error("FOCUS_BLOCKED: fixture denial"); }};

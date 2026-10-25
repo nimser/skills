@@ -135,6 +135,16 @@ describe("passive default and explicit foreground/direct CDP", () => {
     gateway.receive(peer, JSON.stringify({...command("Browser.getVersion"), id: 2}));
     expect(sent).toHaveLength(1); expect(JSON.parse(replies[0]!).error.code).toBe(-32001);
   });
+  test.each(["null", "true", "0", "[]", '"text"', "{}", '{"id":null}', '{"id":1.5}', '{"id":1}', '{"id":1,"result":null}', '{"method":"event","params":null}', '{"method":null}', '{"method":"event","sessionId":1}', '{"method":"Target.attachedToTarget"}', '{"method":"Target.attachedToTarget","params":{}}', "{"])("malformed browser frame %s closes the peer without throwing or replaying", text => {
+    let sends = 0, closes = 0, replies = 0;
+    const gateway = new FocusGateway("fixture-browser", () => lease({actions: ["direct-cdp"]}), () => { sends++; }, () => now);
+    const peer = {send() { replies++; }, close() { closes++; }};
+    gateway.connect(peer, "direct");
+    expect(() => gateway.fromBrowser(text)).not.toThrow();
+    expect(closes).toBe(1); expect(replies).toBe(0);
+    gateway.receive(peer, JSON.stringify(command("Browser.getVersion")));
+    expect(sends).toBe(0);
+  });
   test("pipe errors close the helper as uncertain without retrying", () => {
     let sends = 0, closes = 0;
     const gateway = new FocusGateway("fixture-browser", lease, () => { sends++; throw new Error(); }, () => now);

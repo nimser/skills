@@ -1,6 +1,16 @@
 import {FocusDenied, FocusPolicy, FOCUS_PROTOCOL, leaseKey, type Command, type InteractionMode} from "./policy.ts";
 
 interface Peer { send(value: string): unknown; close(code?: number, reason?: string): unknown }
+export function parseBrowserFrame(text: string): any {
+  const message = JSON.parse(text);
+  const record = (value: any) => value !== null && typeof value === "object" && !Array.isArray(value);
+  if (!record(message)
+    || (message.id === undefined ? typeof message.method !== "string" : !Number.isSafeInteger(message.id) || (!record(message.result) && !record(message.error)))
+    || (message.params !== undefined && !record(message.params))
+    || (message.sessionId !== undefined && typeof message.sessionId !== "string")
+    || (message.method === "Target.attachedToTarget" && (typeof message.params?.sessionId !== "string" || typeof message.params?.targetInfo?.targetId !== "string"))) throw new Error("Invalid browser frame");
+  return message;
+}
 export class FocusGateway {
   private peer?: Peer;
   private policy?: FocusPolicy;
@@ -46,8 +56,11 @@ export class FocusGateway {
     }
   }
   fromBrowser(text: string): void {
-    let message: any;
-    try { message = JSON.parse(text); } catch { this.fail(); return; }
+    try {
+      this.forwardBrowser(parseBrowserFrame(text), text);
+    } catch { this.fail(); }
+  }
+  private forwardBrowser(message: any, text: string): void {
     if (message.method === "Target.targetDestroyed") {
       this.created.delete(message.params?.targetId);
       this.owned.delete(message.params?.targetId);

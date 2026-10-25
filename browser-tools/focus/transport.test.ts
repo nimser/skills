@@ -48,6 +48,39 @@ describe("guarded client and private-pipe integration without a desktop", () => 
     expect((await fetch(`http://127.0.0.1:${state.port}/json/version`, {headers: {origin: "https://example.test"}})).status).toBe(403);
   });
 
+  test.each(["--malformed-startup", "--malformed-runtime"])("malformed private-pipe frames fail closed during %s", async flag => {
+    const original = process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR;
+    process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR = join(temporary, flag.slice(2));
+    let isolated: ReturnType<typeof Bun.spawn> | undefined;
+    let socket: WebSocket | undefined;
+    try {
+      writePrivateJson(leasePath(), grant({launch: true}));
+      isolated = Bun.spawn([process.execPath, fileURLToPath(new URL("serve.ts", import.meta.url)), "--user-data-dir", join(temporary, "malformed-profile"), "--", process.execPath, fileURLToPath(new URL("fixtures/fake-browser.ts", import.meta.url)), "--remote-debugging-pipe", flag], {env: {...process.env}, stdout: "pipe", stderr: "pipe"});
+      const deadline = Date.now() + 3000;
+      if (flag === "--malformed-runtime") {
+        while (!existsSync(gatewayPath()) && isolated.exitCode === null && Date.now() < deadline) await Bun.sleep(10);
+        expect(existsSync(gatewayPath())).toBe(true);
+        socket = new WebSocket(readPrivateJson(gatewayPath()).webSocketDebuggerUrl);
+        await new Promise<void>((resolve, reject) => { socket!.onopen = () => resolve(); socket!.onerror = () => reject(new Error("Malformed-frame fixture socket failed")); });
+        const closed = new Promise<number>(resolve => { socket!.onclose = event => resolve(event.code); });
+        socket.send(JSON.stringify({id: 1, method: "Browser.getVersion"}));
+        expect(await closed).toBe(1011);
+      }
+      while (isolated.exitCode === null && Date.now() < deadline) await Bun.sleep(10);
+      expect(isolated.exitCode).not.toBeNull();
+      expect(existsSync(gatewayPath())).toBe(false);
+      expect(readPrivateJson(leasePath()).launch).toBe(false);
+      const error = await new Response(isolated.stderr as ReadableStream<Uint8Array>).text();
+      expect(error).not.toContain("TypeError");
+      if (flag === "--malformed-startup") expect(error).toContain("Invalid private browser frame");
+    } finally {
+      socket?.close();
+      if (isolated?.exitCode === null) isolated.kill("SIGTERM");
+      if (isolated) await isolated.exited;
+      process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR = original;
+    }
+  });
+
   test("launch tickets are single-use and the manual grant command requires an owner terminal", async () => {
     expect(() => consumeLaunch()).toThrow("launch lease");
     const before = readFileSync(leasePath(), "utf8");

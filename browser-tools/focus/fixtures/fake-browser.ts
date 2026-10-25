@@ -3,6 +3,7 @@ import {createReadStream, writeSync} from "node:fs";
 let buffer = "", target = 0, session = 0, discover = false, auto = false;
 const targets = new Map([["owned", {targetId: "owned", type: "page", url: "about:blank", title: "Fixture", attached: false, canAccessOpener: false}]]);
 const send = (message: any) => writeSync(4, JSON.stringify(message) + "\0");
+if (process.argv.includes("--malformed-startup")) send(null);
 const announce = (info: any) => {
   if (discover) send({method: "Target.targetCreated", params: {targetInfo: info}});
   if (auto) send({method: "Target.attachedToTarget", params: {sessionId: `auto-${++session}`, targetInfo: info, waitingForDebugger: false}});
@@ -14,6 +15,7 @@ stream.on("data", chunk => {
   while ((end = buffer.indexOf("\0")) >= 0) {
     const message = JSON.parse(buffer.slice(0, end));
     buffer = buffer.slice(end + 1);
+    if (message.id > 0 && message.method === "Browser.getVersion" && process.argv.includes("--malformed-runtime")) { send(null); continue; }
     let result: any = {}, event: (() => void) | undefined;
     switch (message.method) {
       case "Browser.close": process.exit(0);

@@ -2,7 +2,7 @@ import {spawn} from "node:child_process";
 import {rmSync} from "node:fs";
 import type {Readable, Writable} from "node:stream";
 import {consumeLaunch, gatewayPath, readLease, writePrivateJson} from "./lease.ts";
-import {FocusGateway, gatewayVersion} from "./gateway.ts";
+import {FocusGateway, gatewayVersion, parseBrowserFrame} from "./gateway.ts";
 import {FocusPolicy, FOCUS_PROTOCOL, type InteractionMode} from "./policy.ts";
 
 export function validateLaunch(command: string[]): void {
@@ -68,9 +68,11 @@ export async function serve(command: string[], userDataDir: string): Promise<voi
       const message = buffer.slice(0, end);
       buffer = buffer.slice(end + 1);
       let parsed: any;
-      try { parsed = JSON.parse(message); } catch { gateway.fail(); child.kill("SIGTERM"); return; }
+      try { parsed = parseBrowserFrame(message); } catch {
+        gateway.fail(); rejectReady(new Error("Invalid private browser frame")); child.kill("SIGTERM"); return;
+      }
       if (!ready && parsed.id === 0) {
-        if (parsed.error || !parsed.result?.product) rejectReady(new Error("Private browser identity unavailable"));
+        if (parsed.error || typeof parsed.result?.product !== "string" || !parsed.result.product) rejectReady(new Error("Private browser identity unavailable"));
         else { product = parsed.result.product; ready = true; resolveReady(); }
       } else gateway.fromBrowser(message);
     }

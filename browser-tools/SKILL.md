@@ -112,10 +112,19 @@ popups/workers do not. New grants do not inherit old foreground target permissio
 Passive ownership of confirmed tabs lasts until target destruction/browser exit,
 so structural reads can continue after a foreground window without another grant.
 
-A lease expiry, disconnect or timeout does not cancel input, network mutations,
-page callbacks, scripts or auto-attachment already installed. Do not resume typing
-or declare a mutation absent merely because approval expired. Stop and hand back
-for inspection; never replay, restore focus, restart or renew automatically.
+Each connection owns a browser protocol-session tree. Disconnect or approval
+expiry/revocation retires it; the next client waits for teardown acknowledgement.
+Allocation/cleanup failure blocks reuse, with no persistent-root fallback.
+Supported-runtime session isolation and mixed-mode acceptance remain unmeasured;
+a running legacy gateway requires explicitly approved shutdown and fresh launch.
+
+Protocol teardown does not undo browser-wide settings, input, network mutations,
+page callbacks or scripts. A command timeout alone does not cancel work or end
+the connection. Navigation uses one bounded deadline across protocol requests and
+DOM-load waiting; timeout errors name methods without payloads. Do not resume
+typing or declare a mutation absent merely because approval expired or cleanup
+completed. Stop and hand back for inspection; never replay, restore focus, restart
+or renew automatically.
 The gateway is not protection against hostile same-UID/admin code able to rewrite
 approval files or launch another browser. Trust host-network devpods appropriately.
 

@@ -12,21 +12,32 @@ a bounded lease. Direct clients explicitly select broader, browser-wide CDP;
 ordinary Puppeteer connections and automatic attachment are supported in that
 mode. Direct mode does not enforce owned-tab isolation. It is not a fallback.
 
-Offline coverage uses fake browser pipes and includes a real Puppeteer client
-against a fake protocol peer. It verifies passive/foreground/direct separation,
-ownership, expiry/revocation, reconnects, discovery and timer checks, not real
-Brave behavior, a compositor, GPU, sandbox or Firejail/bubblewrap pipe inheritance.
-**Complete live regression and desktop focus acceptance remain blocked.** The
-direct-to-scoped tab-lifecycle regression times out after a Puppeteer session;
-disconnecting a gateway peer does not clear browser-root auto-attachment state.
-Do not accept mixed-mode reuse or enable new background actions from isolated
-successes or fake/headless tests.
+Offline coverage uses fake browser pipes and a real Puppeteer client against a
+fake protocol peer. It models retained debugger waits, nested session teardown,
+direct-to-scoped tab lifecycle, idle expiry/revocation, stale replies, cleanup
+failures and navigation deadlines. It does not verify real Brave behavior, a
+compositor, GPU, sandbox or Firejail/bubblewrap pipe inheritance.
+**Complete live regression and desktop focus acceptance remain blocked.**
+Per-client session isolation requires supported-runtime validation and the full
+mixed-mode matrix. Do not accept mixed-mode reuse or enable new background
+actions from isolated successes or fake/headless tests.
 
 ## Transport
 
 - `serve.ts` owns inherited CDP descriptors 3/4; Brave has no debug TCP listener.
 - `gateway.ts` admits one loopback WebSocket peer at a time. HTTP tab verbs,
   browser origins, rebinding hosts and query-string routes are rejected.
+- Every peer gets a private flattened browser session through
+  `Target.attachToBrowserTarget`. Root client commands are routed through it;
+  descendant session IDs belong to that connection only. The persistent pipe
+  root handles gateway lifecycle controls, never client auto-attachment.
+- Startup commands wait for private-session allocation, with a 1 MB queue bound.
+  Disconnect, approval replacement, expiry and revocation retire that session
+  tree. Idle approvals are rechecked every 100 ms; dispatch and replies/events
+  also check approval. New socket admission waits for teardown acknowledgement.
+- Allocation and teardown have five-second deadlines. Unsupported allocation,
+  malformed replies, cleanup errors or timeouts block gateway reuse until
+  explicitly approved recovery; there is no fallback to the persistent root.
 - Default discovery is `/json/version`; elevated discovery is
   `/foreground/json/version` or `/direct/json/version`. Corresponding WebSocket
   paths append `/foreground` or `/direct` to the pinned base browser path. A
@@ -42,6 +53,9 @@ successes or fake/headless tests.
 - `host.js` preflights static broker capabilities before requesting resume or an
   explicit grant. `client.js` checks live generation/mode/URL identity before
   opening its socket. Legacy v1/raw brokers fail before a launch request.
+  Navigation shares one monotonic deadline across page enablement, navigation,
+  DOM-load waiting and frame-tree reads, capped by the recorded task budget.
+  Timeout errors name the protocol method, not URLs or command parameters.
 - Launch permission is separate and single-use. Default `/resume` never launches,
   even if a launch lease exists. `/foreground` validates an explicit bounded
   confirmation before allowing startup. No automatic restart/reset/retry.
@@ -100,11 +114,13 @@ owned-page `Page.bringToFront`/`Target.activateTarget`; `keyboard` is CDP page
 input, never global desktop injection. Manual login, consent, payload approval
 and site restrictions are independent of foreground/direct permission.
 
-Lease expiry/revocation blocks later dispatch, not already-sent work. Scripts,
-network writes, delayed focus requests and automatic attachments can outlive a
-connection or grant. Do not resume typing or declare an uncertain mutation absent
-because approval expired. Inspect before retrying; never restore focus, close
-windows, renew grants or restart browsers automatically.
+Lease expiry/revocation blocks later dispatch and retires the client's protocol
+sessions, not already-sent work. Teardown does not undo browser-wide settings,
+scripts, network writes or delayed focus requests. A command timeout alone does
+not cancel work or end the connection. Do not resume typing or declare an
+uncertain mutation absent because approval expired or cleanup completed. Inspect
+before retrying; never restore focus, close windows, renew grants or restart
+browsers automatically.
 
 ## Fixture-only foreground regression
 
@@ -173,11 +189,12 @@ mismatched pins require an explicit replacement. An uncertain edit needs
 inspection, not replay. Direct mode changes the trust scope, not the recovery rule.
 
 Do not hand a direct-CDP browser generation to a scoped mutation task until
-protocol-session lifetime isolation and the complete mixed-mode matrix pass.
-A new lease does not reconcile browser-root discovery, debugger waits or
-attachments. Use an explicitly approved shutdown and fresh bounded launch for
-mode handoff; never resume foreign targets or reset browser-wide state as a
-silent fallback after revocation.
+supported-runtime session isolation and the complete mixed-mode matrix pass.
+Session isolation requires a freshly launched gateway; updating shared files or
+issuing a lease cannot repair a running gateway's legacy browser-root discovery,
+debugger waits or attachments. A failed teardown blocks all new connections.
+Use an explicitly approved shutdown and fresh bounded launch for recovery;
+never resume foreign targets or reset browser-wide state as a silent fallback.
 
 A failed launch consumes its ticket. Inspect service/jail/descriptor support and
 request a fresh bounded window only after resolving the failure. A stale launch

@@ -1,22 +1,23 @@
-import {FocusDenied, FocusPolicy, FOCUS_PROTOCOL, type Command} from "./policy.ts";
+import {FocusDenied, FocusPolicy, FOCUS_PROTOCOL, leaseKey, type Command, type InteractionMode} from "./policy.ts";
 
 interface Peer { send(value: string): unknown; close(code?: number, reason?: string): unknown }
 export class FocusGateway {
   private peer?: Peer;
   private policy?: FocusPolicy;
   private wireId = 0;
-  private readonly calls = new Map<number, {peer: Peer; original: Command}>();
-  private readonly created = new Map<string, number>();
+  private readonly calls = new Map<number, {peer: Peer; original: Command; epoch?: string}>();
+  private readonly created = new Map<string, string>();
+  private readonly owned = new Set<string>();
   constructor(readonly browserId: string, private readonly lease: () => unknown, private readonly upstream: (message: string) => void, private readonly now = Date.now) {}
 
-  connect(peer: Peer): boolean {
+  connect(peer: Peer, mode: InteractionMode = "background"): boolean {
     if (this.peer) return false;
     this.peer = peer;
-    this.policy = new FocusPolicy(this.browserId, this.lease, this.now);
-    try {
-      const lease = this.policy.currentLease();
-      for (const [target, issuedAt] of this.created) if (issuedAt === lease.issuedAt) this.policy.createdTargets.add(target);
-    } catch { /* Commands fail before dispatch when no lease is active. */ }
+    this.policy = new FocusPolicy(this.browserId, this.lease, this.now, mode, this.owned);
+    if (mode !== "background") try {
+      const epoch = leaseKey(this.policy.currentLease());
+      for (const [target, approval] of this.created) if (approval === epoch) this.policy.createdTargets.add(target);
+    } catch { /* Elevated commands fail before dispatch without an active lease. */ }
     return true;
   }
   disconnect(peer: Peer): void {
@@ -35,7 +36,8 @@ export class FocusGateway {
       if (!command || typeof command !== "object") throw new FocusDenied("invalid protocol message");
       this.policy.authorize(command);
       const wireId = ++this.wireId;
-      this.calls.set(wireId, {peer, original: command});
+      this.calls.set(wireId, {peer, original: command,
+        ...(this.policy.mode !== "background" ? {epoch: leaseKey(this.policy.currentLease())} : {})});
       submitted = true;
       this.upstream(JSON.stringify({...command, id: wireId}));
     } catch (error) {
@@ -46,6 +48,10 @@ export class FocusGateway {
   fromBrowser(text: string): void {
     let message: any;
     try { message = JSON.parse(text); } catch { this.fail(); return; }
+    if (message.method === "Target.targetDestroyed") {
+      this.created.delete(message.params?.targetId);
+      this.owned.delete(message.params?.targetId);
+    }
     if (typeof message.id === "number") {
       const call = this.calls.get(message.id);
       if (!call) return;
@@ -54,13 +60,22 @@ export class FocusGateway {
       message.id = call.original.id;
       this.policy.observe(message);
       if (!message.error && call.original.method === "Target.createTarget") {
-        try { this.created.set(message.result.targetId, this.policy.currentLease().issuedAt); } catch { /* An expired action is uncertain, not retried. */ }
+        try { if (call.epoch === leaseKey(this.policy.currentLease())) this.created.set(message.result.targetId, call.epoch!); } catch { /* Expired actions are uncertain, not retried. */ }
+      }
+      try { this.policy.connectionAllowed(); } catch { this.fail(); return; }
+      if (!message.error && this.policy.mode !== "direct" && call.original.method === "Target.getTargets") {
+        const approved = this.policy.mode === "foreground" ? this.policy.currentLease().targets : [];
+        message.result.targetInfos = (message.result?.targetInfos || []).filter((target: any) => this.owned.has(target.targetId) || approved.includes(target.targetId));
       }
       call.peer.send(JSON.stringify(message));
     } else if (this.peer && this.policy) {
-      if (message.sessionId && !this.policy.sessions.has(message.sessionId)) return;
       this.policy.observe(message);
-      if (message.method === "Target.targetDestroyed") this.created.delete(message.params?.targetId);
+      try { this.policy.connectionAllowed(); } catch { this.fail(); return; }
+      if (this.policy.mode !== "direct") {
+        if (message.sessionId && !this.policy.sessions.has(message.sessionId)) return;
+        const target = message.params?.targetInfo?.targetId ?? message.params?.targetId;
+        if (!message.sessionId && (!target || !this.owned.has(target))) return;
+      }
       this.peer.send(text);
     }
   }
@@ -71,7 +86,7 @@ export class FocusGateway {
     this.calls.clear();
   }
 }
-export function gatewayVersion(browserId: string, port: number) {
-  return {Browser: "BrowserTools/1", "Protocol-Version": "1.3", focusProtocol: FOCUS_PROTOCOL,
-    browserId, webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/${browserId}`};
+export function gatewayVersion(browserId: string, port: number, mode: InteractionMode = "background", product = "Chrome/0") {
+  return {Browser: product, "Protocol-Version": "1.3", focusProtocol: FOCUS_PROTOCOL, interactionMode: mode,
+    browserId, webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/${browserId}${mode === "background" ? "" : `/${mode}`}`};
 }

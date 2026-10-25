@@ -10,7 +10,7 @@ export async function desktopAcceptance(selected?: string): Promise<void> {
   if (process.env.BROWSER_TOOLS_DESKTOP_TEST_APPROVED !== "1") throw new Error("Explicit owner approval for a dedicated desktop experiment is required");
   const state = readPrivateJson(gatewayPath());
   if (!basename(state.userDataDir || "").startsWith("focus-fixture-") || !process.env.BROWSER_TOOLS_RUNTIME_DIR) throw new Error("Use a disposable focus-fixture-* jailed profile and a separate explicit client runtime");
-  writeState(state);
+  writeState({...state, interactionMode: "foreground"});
   const trace = new FocusTrace();
   const server = Bun.serve({hostname: "127.0.0.1", port: 0, async fetch(request) {
     const url = new URL(request.url);

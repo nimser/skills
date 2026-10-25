@@ -2,10 +2,9 @@
 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import puppeteer from "puppeteer-core";
 import { connectBrowser, ownedPage } from "./browser-config.js";
 
-const b = await connectBrowser(puppeteer).catch((e) => {
+const b = await connectBrowser().catch((e) => {
 	console.error("✗ Could not connect to browser:", e.message);
 	console.error("  Run: browser-start.js");
 	process.exit(1);

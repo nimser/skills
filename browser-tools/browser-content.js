@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import puppeteer from "puppeteer-core";
 import { connectBrowser, ownedPage } from "./browser-config.js";
 import { authenticatePage } from "./proxy-util.js";
 import { waitForManualLogin } from "./login-wait.js";
@@ -27,7 +26,7 @@ if (!url) {
 	process.exit(1);
 }
 
-const b = await connectBrowser(puppeteer).catch((e) => {
+const b = await connectBrowser().catch((e) => {
 	console.error("✗ Could not connect to browser:", e.message);
 	console.error("  Run: browser-start.js");
 	process.exit(1);
@@ -35,10 +34,7 @@ const b = await connectBrowser(puppeteer).catch((e) => {
 
 const p = await ownedPage(b);
 await authenticatePage(p);
-await Promise.race([
-	p.goto(url, { waitUntil: "networkidle2" }),
-	new Promise((r) => setTimeout(r, 10000)),
-]).catch(() => {});
+await p.goto(url, {waitUntil: "domcontentloaded", timeout: 10000});
 
 // A login wall pauses extraction: login is manual, never bypassed.
 clearTimeout(timeoutId);

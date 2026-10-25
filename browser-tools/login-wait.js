@@ -18,7 +18,7 @@ const TEXT_PATTERN = /\b(sign in|sign-in|log in|login|anmelden|se connecter|inic
 // Heuristic login-wall detection; returns a reason string or undefined.
 export async function detectLoginWall(page) {
 	const url = page.url();
-	if (URL_PATTERN.test(new URL(url).pathname + new URL(url).search)) return `URL looks like a login/auth page: ${url}`;
+	if (URL_PATTERN.test(new URL(url).pathname + new URL(url).search)) return "URL looks like a login/auth page";
 	const signals = await page
 		.evaluate(() => {
 			const visible = (el) => {
@@ -33,9 +33,7 @@ export async function detectLoginWall(page) {
 				.filter(Boolean)
 				.slice(0, 60);
 			return { passwords, otp, buttons, title: document.title, text: (document.body?.innerText || "").slice(0, 2000) };
-		})
-		.catch(() => undefined);
-	if (!signals) return undefined;
+		});
 	if (signals.passwords > 0) return "a visible password field is present";
 	if (signals.otp > 0 && TEXT_PATTERN.test(signals.text)) return "a one-time-code / 2FA prompt is present";
 	if (signals.buttons.some((b) => /^(sign in|log in|login|continue with (google|apple|github|microsoft|facebook))/i.test(b)) && TEXT_PATTERN.test(signals.title + " " + signals.text)) {
@@ -60,9 +58,8 @@ async function pollActivity(page, flag) {
 				}
 				window[key] = state;
 			}
-			return { count: window[key].count, sinceMs: window[key].last ? Date.now() - window[key].last : Infinity };
-		}, flag)
-		.catch(() => ({ count: 0, sinceMs: Infinity }));
+			return { count: window[key].count, sinceMs: window[key].last ? Date.now() - window[key].last : Number.MAX_SAFE_INTEGER };
+		}, flag);
 }
 
 // Waits for the user to clear a login wall. Resolves with the outcome; never
@@ -82,9 +79,9 @@ export async function waitForManualLogin(page, { timeoutMs = DEFAULT_LOGIN_WAIT_
 
 	for (;;) {
 		await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-		const still = await detectLoginWall(page).catch(() => reason);
+		const still = await detectLoginWall(page);
 		if (!still) {
-			log(`✓ Login completed — continuing at ${page.url()}`);
+			log("✓ Login completed — continuing in the owned tab");
 			return { loginWall: true, resolved: true };
 		}
 		const now = Date.now();
@@ -99,7 +96,7 @@ export async function waitForManualLogin(page, { timeoutMs = DEFAULT_LOGIN_WAIT_
 		}
 		if (now >= deadline) break;
 	}
-	log(`✗ Still on a login wall after ${Math.round((Date.now() - start) / 1000)}s at ${page.url()}`);
+	log(`✗ Still on a login wall after ${Math.round((Date.now() - start) / 1000)}s`);
 	log("  Handing back: log in in the visible browser, then re-run this command. Do not bypass the login.");
 	return { loginWall: true, resolved: false, url: page.url(), reason };
 }

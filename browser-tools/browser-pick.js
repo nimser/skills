@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import puppeteer from "puppeteer-core";
 import { connectBrowser, ownedPage } from "./browser-config.js";
 
 const message = process.argv.slice(2).join(" ");
@@ -11,7 +10,7 @@ if (!message) {
 	process.exit(1);
 }
 
-const b = await connectBrowser(puppeteer).catch((e) => {
+const b = await connectBrowser().catch((e) => {
 	console.error("✗ Could not connect to browser:", e.message);
 	console.error("  Run: browser-start.js");
 	process.exit(1);

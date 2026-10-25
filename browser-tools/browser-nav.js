@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import puppeteer from "puppeteer-core";
 import { connectBrowser, newOwnedPage, ownedPage } from "./browser-config.js";
 import { authenticatePage } from "./proxy-util.js";
 import { DEFAULT_LOGIN_WAIT_MS, waitForManualLogin } from "./login-wait.js";
@@ -23,7 +22,7 @@ if (!urlArg) {
 
 const url = /^[a-z][a-z\d+.-]*:\/\//i.test(urlArg) ? urlArg : `https://${urlArg}`;
 
-const b = await connectBrowser(puppeteer).catch((e) => {
+const b = await connectBrowser().catch((e) => {
 	console.error("✗ Could not connect to browser:", e.message);
 	console.error("  Run: browser-start.js");
 	process.exit(1);

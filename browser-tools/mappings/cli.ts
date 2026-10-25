@@ -1,7 +1,6 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import puppeteer from "puppeteer-core";
 import { connectBrowser, ownedPage } from "../browser-config.js";
 import { parseMappings } from "./model.ts";
 import { probePage } from "./probe.ts";
@@ -45,7 +44,7 @@ export async function main(args: string[]): Promise<number> {
   const guard = spawnSync(process.env.NODE_BINARY || "node", [fileURLToPath(new URL("../session-guard.js", import.meta.url)), "check"], { stdio: "inherit", env: process.env });
   if (guard.status !== 0) return 1;
   let browser;
-  try { browser = await connectBrowser(puppeteer); }
+  try { browser = await connectBrowser(); }
   catch { console.error("Browser connection failed; start or resume browser-tools. No retry was attempted."); return 1; }
   try {
     const page = await ownedPage(browser);

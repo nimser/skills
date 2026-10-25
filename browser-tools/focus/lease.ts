@@ -3,7 +3,7 @@ import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {randomUUID} from "node:crypto";
 import {createInterface} from "node:readline/promises";
-import {actions, FocusDenied, parseLease, type Lease} from "./policy.ts";
+import {actions, FOCUS_PROTOCOL, FocusDenied, parseLease, type Lease} from "./policy.ts";
 
 export function focusDirectory(): string {
   return process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR || join(process.env.XDG_RUNTIME_DIR || tmpdir(), `browser-tools-focus-${process.getuid?.()}`);
@@ -61,6 +61,25 @@ export function grantArguments(args: string[], browserId: string, now = Date.now
   }
   if (!Number.isInteger(seconds) || seconds < 1 || seconds > 300 || !selected?.length || (!launch && !targets.length)) throw new Error("Specify bounded actions, duration and an owned target, or --launch");
   return parseLease({version: 1, browserId, issuedAt: now, expiresAt: now + seconds * 1000, targets, actions: selected, launch}, browserId, now);
+}
+
+export function approveForeground(request: unknown): Lease {
+  const value = request as {mode?: string; confirmed?: boolean; seconds?: number; targets?: string[]};
+  if (!value || value.confirmed !== true || !["foreground", "direct"].includes(value.mode!)
+    || Object.keys(value).some(key => !["mode", "confirmed", "seconds", "targets"].includes(key))
+    || !Number.isInteger(value.seconds) || value.seconds! < 1 || value.seconds! > 300
+    || !Array.isArray(value.targets)) throw new FocusDenied("explicit bounded foreground approval is required");
+  let gateway;
+  if (existsSync(gatewayPath())) {
+    gateway = readPrivateJson(gatewayPath());
+    if (gateway.focusProtocol !== FOCUS_PROTOCOL) throw new FocusDenied("stop the legacy gateway with owner approval before changing modes");
+  }
+  const now = Date.now(), browserId = gateway?.browserId || randomUUID();
+  const lease = parseLease({version: 1, browserId, issuedAt: now,
+    expiresAt: now + value.seconds! * 1000, targets: value.targets,
+    actions: actions.filter(action => value.mode === "direct" || action !== "direct-cdp"), launch: !gateway}, browserId, now);
+  writePrivateJson(leasePath(), lease);
+  return lease;
 }
 
 if (import.meta.main) {

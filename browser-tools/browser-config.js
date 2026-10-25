@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { connectGuardedBrowser, FOCUS_PROTOCOL } from "./focus/client.js";
+import { modeEndpoint, startOptions } from "./focus/mode.js";
 
 const DEFAULT_PORT = 9222;
 const MAX_PORT = 65535;
@@ -36,11 +37,7 @@ function lockFile() {
 }
 
 export function hostStartRoute(args) {
-	if (!args.includes("--host") || args.some(arg => !["--host", "--keep-cookies", "--resume"].includes(arg))
-		|| new Set(args).size !== args.length || (args.includes("--keep-cookies") && args.includes("--resume"))) {
-		throw new Error("Use --host --resume; container-local launch and profile copying are unsupported");
-	}
-	return args.includes("--resume") ? "/resume" : args.includes("--keep-cookies") ? "/start-keep-cookies" : "/start";
+	return startOptions(args).mode === "background" ? "/resume" : "/foreground";
 }
 
 export function cdpUrl(port) {
@@ -91,11 +88,14 @@ function saveOwnedTab(browser, id) {
 	fs.renameSync(temporary, ownedTabFile());
 }
 
+export function readOwnedTab() {
+	try { return JSON.parse(fs.readFileSync(ownedTabFile(), "utf8")); } catch { return undefined; }
+}
+
 export async function ownedPage(browser) {
-	let saved;
-	try { saved = JSON.parse(fs.readFileSync(ownedTabFile(), "utf8")); } catch {}
+	const saved = readOwnedTab();
 	if (!saved || saved.endpoint !== browser.wsEndpoint() || typeof saved.targetId !== "string") {
-		throw new Error("No owned tab for this browser; run browser-start.js --host --resume or browser-nav.js <URL> --new");
+		throw new Error("No owned tab for this browser; explicitly request foreground startup or browser-nav.js <URL> --new under foreground approval");
 	}
 	const targets = await browser.targetInfos();
 	if (!targets.some(target => target.type === "page" && target.targetId === saved.targetId)) {
@@ -152,7 +152,7 @@ export async function waitForCdp(port, timeoutMs = 15_000) {
 
 export function resolveCdpUrl() {
 	const state = readState();
-	if (state?.mode === "host" && state.focusProtocol === FOCUS_PROTOCOL) return cdpUrl(validPort(state.port));
+	if (state?.mode === "host" && state.focusProtocol === FOCUS_PROTOCOL) { validPort(state.port); return modeEndpoint(state).browserURL; }
 	throw new Error("FOCUS_BLOCKED: no guarded host gateway is recorded; raw environment endpoints are unsupported");
 }
 

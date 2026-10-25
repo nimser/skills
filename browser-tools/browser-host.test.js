@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
-import {mkdtempSync, readFileSync, rmSync} from "node:fs";
+import {mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {test} from "node:test";
@@ -20,12 +20,15 @@ const script = (name, args = [], extra = {}) => spawnSync(process.execPath, [fil
 test("host ownership and focus preflight without a real browser", async t => {
   try {
     await t.test("validates route arguments but does not allow a clean-start fallback", () => {
+      assert.equal(hostStartRoute([]), "/resume");
+      assert.equal(hostStartRoute(["--host"]), "/resume");
       assert.equal(hostStartRoute(["--host", "--resume"]), "/resume");
-      for (const args of [["--keep-cookies"], ["--host", "--profile"], ["--host", "--keep-cookies", "--resume"], ["--host", "--unknown"]]) assert.throws(() => hostStartRoute(args), /Use --host/);
-      for (const args of [[], ["--profile"], ["--host"], ["--host", "--keep-cookies"]]) {
+      assert.equal(hostStartRoute(["--foreground"]), "/foreground");
+      for (const args of [["--keep-cookies"], ["--host", "--profile"], ["--host", "--keep-cookies", "--resume"], ["--host", "--unknown"]]) assert.throws(() => hostStartRoute(args), /Use browser-start/);
+      for (const args of [["--profile"], ["--direct-cdp"], ["--host", "--keep-cookies"]]) {
         const result = script("browser-start.js", args);
         assert.equal(result.status, 1);
-        assert.match(result.stderr, /FOCUS_BLOCKED|Use --host/);
+        assert.match(result.stderr, /FOCUS_BLOCKED|Use browser-start|require explicit/);
       }
     });
     await t.test("pins the explicit owned target, never the selected or newest target", async () => {
@@ -51,7 +54,7 @@ test("host ownership and focus preflight without a real browser", async t => {
       writeState(state);
       assert.throws(() => resolveCdpUrl(), /FOCUS_BLOCKED/);
       await assert.rejects(connectBrowser({connect() { throw new Error("must not connect"); }}), /FOCUS_BLOCKED/);
-      for (const [file, args] of [["browser-nav.js", ["https://example.test"]], ["browser-eval.js", ["document.title"]], ["browser-click-xy.js", ["10", "10"]], ["browser-screenshot.js", []], ["browser-content.js", ["https://example.test"]], ["browser-cookies.js", []], ["browser-login-wait.js", []], ["browser-pick.js", ["fixture"]]]) {
+      for (const [file, args] of [["browser-nav.js", ["https://example.test"]], ["browser-eval.js", ["document.title"]], ["browser-click-xy.js", ["10", "10"]], ["browser-screenshot.js", []], ["browser-content.js", ["https://example.test"]], ["browser-cookies.js", []], ["browser-login-wait.js", []], ["browser-pick.js", ["fixture"]], ["browser-inspect.js", ["input"]]]) {
         const result = script(file, args);
         assert.equal(result.status, 1, `${file}: ${result.stderr}`);
         assert.match(result.stderr, /FOCUS_BLOCKED/, file);
@@ -69,6 +72,17 @@ test("host ownership and focus preflight without a real browser", async t => {
       assert.equal(result.status, 0, result.stderr);
       assert.match(result.stdout, /remains open/);
       assert.equal(readState(), undefined);
+    });
+    await t.test("expired task budgets block explicit startup before host approval or launch", () => {
+      writeState(state);
+      const timer = join(directory, "session-guard.state");
+      writeFileSync(timer, `${Date.now() - 120_000}\t1\n`);
+      try {
+        const result = script("browser-start.js", ["--foreground", "--direct-cdp"]);
+        assert.equal(result.status, 1);
+        assert.match(result.stderr, /EXPIRED/);
+        assert.deepEqual(readState(), state);
+      } finally { rmSync(timer); }
     });
     await t.test("rejects proxy configuration without replacing recorded identity", () => {
       writeState(state);

@@ -7,11 +7,12 @@ import { DEFAULT_LOGIN_WAIT_MS, waitForManualLogin } from "./login-wait.js";
 const args = process.argv.slice(2);
 const newTab = args.includes("--new");
 const reload = args.includes("--reload");
+const activate = args.includes("--activate");
 const skipLoginWait = args.includes("--no-login-wait");
 const urlArg = args.find(a => !a.startsWith("--"));
 
 if (!urlArg) {
-	console.log("Usage: browser-nav.js <url> [--new] [--reload]");
+	console.log("Usage: browser-nav.js <url> [--new] [--reload] [--activate] [--no-login-wait]");
 	console.log("\nExamples:");
 	console.log("  browser-nav.js https://example.com          # Navigate owned tab");
 	console.log("  browser-nav.js https://example.com --new    # Own a new background tab");
@@ -30,6 +31,7 @@ const b = await connectBrowser().catch((e) => {
 
 const p = newTab ? await newOwnedPage(b) : await ownedPage(b);
 await authenticatePage(p);
+if (activate) await p.bringToFront();
 await p.goto(url, { waitUntil: "domcontentloaded" });
 if (reload && !newTab) await p.reload({ waitUntil: "domcontentloaded" });
 console.log(newTab ? "✓ Opened:" : "✓ Navigated to:", url);

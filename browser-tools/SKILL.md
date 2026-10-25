@@ -1,164 +1,176 @@
 ---
 name: browser-tools
-description: Guarded, owned-tab browser automation with explicit foreground leases, page mappings and bounded sequential helpers.
+description: Passive owned-tab inspection by default; bounded foreground interaction and ordinary CDP/Puppeteer access only when explicitly requested.
 ---
 
 # Browser tools
 
-## Focus safety
+## Choose the mode
 
-**Use application APIs/CLI while the owner works in another application.** No
-background browser action class has an approved focus-neutral capability.
-Navigation/reload, blank-tab creation, DOM clicks, coordinate/CDP input,
-screenshots, evaluation and reconnects fail closed without an explicit foreground
-window. Do not activate a window/tab, restore focus afterward, inject global input,
-retry with another driver or use browser interaction as an API failure fallback.
+| Mode | Available operations | Approval |
+| --- | --- | --- |
+| **Background (default)** | Metadata, owned-page attachment, frame tree and structural DOM queries | No foreground lease; never launches, creates tabs, activates or runs JavaScript |
+| **Foreground** | Owned-tab navigation, evaluation, screenshots, clicks, typing and explicit activation | Explicit user request; bounded lease, at most five minutes |
+| **Direct CDP** | Ordinary CDP/Puppeteer connection, auto-attachment and broader browser protocol methods | Separate explicit request for browser-wide access; bounded lease |
+
+Use application APIs/CLI for mutations while the owner works elsewhere. Default
+inspection uses a small protocol allowlist, not arbitrary JavaScript labelled as
+read-only. Passive dispatch/ownership is covered by fake-pipe tests; live desktop
+focus coverage remains **unmeasured**. Background navigation, screenshots, new tabs,
+DOM clicks, layout snapshots and evaluation remain unsupported until measured.
+No automatic upgrade, driver fallback, activation, focus restoration or retry.
 
 Autosaving editors are persistent mutations: redirected physical typing can alter
-source even when the agent never intended to type. Owned targets, `background:
-true`, `document.hasFocus()` and Niri's `open-focused false` are not proof of
-end-to-end desktop safety. A DOM click can execute focus-changing site code.
+source. Owned targets, `background: true` and Niri's unfocused-open rule are not
+proof of desktop safety. Even a DOM click can invoke focus-changing site code.
+Passive reads do not cancel old site callbacks or guarantee site-initiated focus
+behavior. Stop if task preconditions or the supported-runtime evidence are absent.
 
-The shared [focus gateway](focus/README.md) owns the browser's private CDP pipe.
-Its loopback WebSocket is the only supported protocol endpoint. Policy is checked
-before every CDP command, including direct helpers, not just before a CLI starts.
-Legacy/raw endpoints, container-local launch, automatic session/data resets and
-unreviewed protocol methods are unsupported. Static host policy is checked before
-requesting a start/resume; the live gateway identity is checked before opening a
-protocol socket. Saved markers alone do not verify an endpoint. There is no
-raw-CDP fallback.
-
-## Foreground approval
-
-Ask for a bounded foreground window only when API/CLI cannot do the work. Name
-the profile, owned target, actions and duration; explain that focus can change and
-the owner must pause other typing. This is separate from approval of account
-mutations, publishing, sending, deletion and payloads. Login, consent and security
-keys remain manual. Stop on CAPTCHA, access denial, throttling or suspicious
-activity; never route around an authentication wall.
-
-The owner issues leases from an interactive **host terminal**, following
-[the runtime guide](focus/README.md). Agents must not issue, extend or emulate the
-confirmation, allocate a PTY to grant a lease, or modify approval files. A lease
-lasts at most five minutes and is bound to one gateway/browser generation, explicit
-CDP action classes and targets. Newly created owned tabs inherit only that lease;
-popups, workers, unrelated targets and browser restarts do not. A new lease needs
-explicit target approval. Revocation/expiry blocks subsequent sends, including
-through a previously opened CDP session. Already-sent work is not cancelled:
-timeouts, disconnections and expiry can leave an uncertain mutation; stop and
-hand back instead of replaying it or assuming failure.
-
-## Host runtime
-
-Host setup/recovery: `~/.local/lib/browser-tools-host/README.md`. Preserve the
-**Automation** profile, Firejail, bubblewrap, native security-key access, browser
-sandbox and visible GPU rendering. The Niri unfocused-open rule remains a useful
-extra, not the enforcement boundary. Host-network containers share the named
-browser and loopback gateway; use trusted agents and separate daily accounts.
-No new USB mounts or sandbox/GPU-disable flags are permitted.
-
-After approved deployment and an owner-issued lease:
+## Default workflow
 
 ```sh
-node {baseDir}/session-guard.js start 20  # once for an approved logged-in session
-{baseDir}/browser-start.js --host --resume
+{baseDir}/browser-start.js                 # attach to a running guarded browser
+{baseDir}/browser-inspect.js 'input,button' # structural inventory, no field values
+{baseDir}/browser-stop.js                  # detach only; leave browser/tabs open
+```
+
+`--host --resume` remains an alias for default attachment. Default startup never
+launches a stopped browser or creates a missing owned tab. A first browser/tab
+setup requires an explicitly approved foreground window. Starting the default
+mode again clears the client's elevated mode selection without extending leases.
+
+Each instance pins the gateway generation and owned tab in `owned-tab.json`.
+Never choose the selected, last or newest foreign tab. Closed/mismatched pins
+fail rather than create a replacement. An explicit `browser-nav.js URL --new`
+under foreground approval creates and pins a replacement. Scoped/default clients
+cannot inspect or auto-attach unrelated tabs; direct mode has a broader contract.
+
+## Explicit foreground interaction
+
+When the user explicitly authorizes foreground work, name the affected profile,
+tab/actions and duration, and warn that focus may change and other typing must
+pause. Then select it deliberately:
+
+```sh
+{baseDir}/browser-start.js --foreground --seconds 120
 {baseDir}/browser-nav.js https://example.test --no-login-wait
-{baseDir}/browser-stop.js               # detach only; never close shared tabs
+{baseDir}/browser-nav.js https://example.test --activate --no-login-wait
 ```
 
-Each instance pins the gateway identity and its owned tab in `owned-tab.json`.
-Helpers never choose the selected, last or newest foreign tab. Closed/mismatched
-owned tabs fail; replacement requires explicit `browser-nav.js URL --new` and a
-`tab-create` lease capability. `browser-start.js --host --resume` does not replace
-a closed/mismatched owned target automatically. Browser restart invalidates the
-lease and pin. Manual target/window selection is never automated.
+`--foreground` asserts that the user approved that foreground window. It requests
+a lease through the host broker and can launch the stopped Automation browser.
+Agents may use it for an explicit user request; they must not select it for mere
+convenience, API failure, default attach failure, or an expired session. No manual
+host-terminal ceremony is required for this explicit command. The interactive
+`focus/lease.ts grant` command remains available for narrower owner-issued scopes.
 
-Runtime configuration:
+Navigation does not call activation automatically. `--activate`, `Page.bringToFront`
+and `Target.activateTarget` work under the `activate` scope for owned targets.
+Keyboard methods dispatch to the browser page, never to desktop/global input.
+A scoped lease does not authorize browser-wide auto-attachment or unknown methods;
+request direct CDP separately if the task needs them.
 
-- `BROWSER_TOOLS_RUNTIME_DIR`: instance-local state directory.
-- `BROWSER_TOOLS_INSTANCE` or `PI_SESSION_ID`: default runtime instance name.
-- `BROWSER_TOOLS_STATE`: explicit instance state file.
-- `BROWSER_TOOLS_FOCUS_RUNTIME_DIR`: host gateway/approval directory; do not share
-  it with untrusted processes or override it to evade the host policy.
-- `BROWSER_GUARD_REQUIRE_SESSION=1`: also require a timer for non-logged-in work.
+Login, consent, security keys and mutation/payload authorization remain separate.
+Never bypass an authentication wall, CAPTCHA, throttling or access denial. A
+foreground window permits focus-changing interaction, not unapproved account work.
 
-The recorded endpoint wins over environment port/URL values. Endpoint environment
-variables and `BROWSER_GUARD_DISABLE` cannot grant focus capabilities. The optional
-Pi `browser-guard` preflight checks readiness/time budgets; it is not the focus
-boundary. An expired or malformed recorded timer blocks each shared-client send.
-Never restart a timer to extend an expired session automatically. Stop it with
-`node {baseDir}/session-guard.js stop` when the approved session ends.
+## Explicit direct CDP / Puppeteer
 
-## Helpers and capabilities
+Only when the user explicitly requests direct/browser-wide access:
 
-| Helper | Foreground capabilities |
-| --- | --- |
-| `browser-nav.js URL [--new] [--reload] [--no-login-wait]` | `navigate`; `tab-create` for `--new`; `javascript` for login detection |
-| `browser-eval.js 'expression'` | `javascript` |
-| `browser-click-xy.js X Y` | `pointer` |
-| `browser-screenshot.js` | `screenshot` |
-| `browser-content.js URL` | `navigate`, `inspect`, `javascript` |
-| `browser-login-wait.js [--seconds N]` | `javascript`; never enters credentials |
-| `browser-pick.js 'message'` | `javascript`; owner selects elements manually |
-| mapping `check` | `javascript` and the session timer |
-
-These are dispatch scopes, not semantic mutation authorization or proof of
-neutrality. `javascript` permits arbitrary page code, including site callbacks,
-focus requests, timers and popups; it is never treated as a read-only escape.
-Coordinate input can trigger any site action. Prefer narrow structural reads over
-screenshots or HTML dumps; never extract unrelated private fields or editor
-contents. `browser-cookies.js`, proxy-auth browser sessions and the automatic
-`browser-session-start.sh` bootstrap are unsupported and fail closed.
-
-## Direct helpers
-
-Read [BROWSER-MAPPINGS.md](BROWSER-MAPPINGS.md) for persistent inventories and paced
-scripts. Project workflows/mappings stay in their own repository; shared policy
-stays in this skill. Use the shared client, not Puppeteer/Playwright attachment:
-
-```javascript
-import { connectBrowser, ownedPage } from "/usr/local/share/agent-skills/browser-tools/browser-config.js";
-
-const browser = await connectBrowser();
-try {
-  const page = await ownedPage(browser);
-  const cdp = await page.createCDPSession();
-  try {
-    await cdp.send("DOMSnapshot.captureSnapshot", { computedStyles: [] });
-  } finally {
-    await cdp.detach();
-  }
-} finally {
-  await browser.disconnect();
-}
+```sh
+{baseDir}/browser-start.js --foreground --direct-cdp --seconds 120
+{baseDir}/browser-endpoint.js --direct-cdp
 ```
 
-This requires an `inspect` foreground lease. Raw WebSocket commands sent to the
-same gateway receive the same policy checks. Raw browser ports, profile endpoint
-files, nested protocol tunnels, browser-global commands, automatic attachment
-that pauses foreign pages, and activation APIs are not supported. The small
-shared page client intentionally does not implement the full Puppeteer API.
-Unsupported operations stop; they do not trigger alternate attachment.
+The endpoint helper prints `browserWSEndpoint` and `browserURL` for the selected
+instance after verifying the live gateway and approval. Pass either to ordinary
+`puppeteer.connect()` or use the WebSocket with a CDP client. Disconnect rather than
+call `browser.close()` unless closing the whole shared browser was also approved.
+Do not print/store runtime endpoints in tracked logs.
 
-## Measured interaction and tests
+This is a normal protocol connection through the private-pipe gateway, not a
+permanently exposed raw Brave port. Direct mode restores auto-attachment, generic
+protocol methods, input and focus-taking behavior; **owned-tab isolation is not
+enforced in this mode**. Popups and other Automation tabs can be visible to the
+client. Do not use daily-persona accounts in this browser. Nested CDP tunnels,
+protocol exposure and certificate-error bypass remain denied. Sandbox/GPU-disable
+launch flags remain denied in every mode.
 
-Inspect the intended state before acting; check authorization and preconditions
-for each dependent mutation, then verify the persisted result. No automatic
-mutation retries, parallel writes or mass submissions. Agent tool calls need no
-artificial sleeps. Reusable scripts use bounded condition waits and sequential
-300–800 ms pacing; pauses are not a readiness, anti-bot or focus guarantee.
+The default WebSocket/HTTP discovery paths never switch to direct mode because a
+lease exists. Elevated paths require a valid lease at discovery, connection and
+each command. Expiry/revocation blocks further sends and forwarding; reconnects
+do not renew approval or silently downgrade an elevated connection. Direct clients
+must honor the task budget; approvals requested through the shared start helper
+are capped by its recorded remaining timer as well as the five-minute ceiling.
 
-Offline tests use a fake private-pipe peer, never a browser or account:
+## Lifetime and uncertainty
+
+A lease binds one browser generation, approved action classes and explicit
+scoped targets. Confirmed newly created tabs join that scoped lease; unrelated
+popups/workers do not. New grants do not inherit old foreground target permission.
+Passive ownership of confirmed tabs lasts until target destruction/browser exit,
+so structural reads can continue after a foreground window without another grant.
+
+A lease expiry, disconnect or timeout does not cancel input, network mutations,
+page callbacks, scripts or auto-attachment already installed. Do not resume typing
+or declare a mutation absent merely because approval expired. Stop and hand back
+for inspection; never replay, restore focus, restart or renew automatically.
+The gateway is not protection against hostile same-UID/admin code able to rewrite
+approval files or launch another browser. Trust host-network devpods appropriately.
+
+## Helpers and runtime
+
+- `browser-inspect.js [CSS_SELECTOR]`: passive structural tags/attributes, at most
+  100 results; never prints field values or page text.
+- `browser-eval.js`, `browser-pick.js`, mapping `check`: foreground JavaScript.
+- `browser-nav.js`: foreground navigation; `--new` needs tab creation and
+  `--activate` deliberately focuses the owned page.
+- `browser-click-xy.js`: foreground pointer input.
+- `browser-screenshot.js`: foreground screenshot.
+- `browser-login-wait.js`: manual login detection/wait, foreground JavaScript.
+- `browser-content.js`: foreground navigation/evaluation/inspection.
+- Cookie export, automatic clean/keep-cookies resets, container-local profile
+  copying and automatic session bootstrap remain unsupported. Broader direct CDP
+  access does not authorize credential extraction or implicit destructive resets.
+
+Host setup: `~/.local/lib/browser-tools-host/README.md`. Preserve the Automation
+profile, Firejail/bubblewrap, security-key access, sandbox and visible GPU rendering.
+Legacy v1/raw endpoints are rejected before resume; deploy broker and shared skill
+versions together. No browser TCP debug listener or unconfined-browser fallback.
+
+Client state uses `BROWSER_TOOLS_RUNTIME_DIR`, `BROWSER_TOOLS_INSTANCE`/`PI_SESSION_ID`
+and optionally `BROWSER_TOOLS_STATE`. Host approvals use the canonical private
+`BROWSER_TOOLS_FOCUS_RUNTIME_DIR`; agents must not rewrite or relocate files to
+manufacture approval. `BROWSER_CDP_*` and guard-disable variables cannot select an
+elevated mode. Explicit CLI options, not environment defaults, select elevation.
+
+Logged-in work requires a session timer (`node {baseDir}/session-guard.js start 20`
+once for the approved task). `BROWSER_GUARD_REQUIRE_SESSION=1` also requires timers
+for public work. An expired/malformed recorded timer blocks shared-client sends;
+never restart a timer to extend a task automatically. Optional Pi preflight is
+not the protocol boundary and cannot grant foreground/direct capabilities.
+
+## Direct shared-client helpers and tests
+
+Read [BROWSER-MAPPINGS.md](BROWSER-MAPPINGS.md) for paced project workflows.
+`connectBrowser()` and `ownedPage()` use the selected instance mode; creating a
+CDP session does not itself escalate permissions. `page.bringToFront()`,
+`page.keyboard.type()` and page CDP input are available under foreground scopes.
+Unsupported shared-client APIs require a deliberate direct-mode request, not an
+independent attachment fallback. Keep dependent mutations sequential, inspect
+preconditions and verify persisted results; never retry uncertain writes.
+
+Runtime details and measurement protocol: [focus/README.md](focus/README.md).
 
 ```sh
 cd {baseDir}
-bun test focus browser-host.test.js mappings
+bun test
 ./mappings/node_modules/.bin/tsc --noEmit -p focus/tsconfig.json
 bun run --cwd mappings typecheck
 ```
 
-Headless DOM-probe tests are separately opt-in (`TEST_DOM_BROWSER=1`) and are not
-desktop acceptance. Desktop focus experiments require explicit owner approval,
-a disposable jailed profile, a decoy foreground application and loopback-only
-fixtures. Follow [the measurement protocol](focus/README.md#desktop-acceptance).
-No live compositor/browser coverage is claimed by offline tests.
+The offline suite uses fake peers, including a real Puppeteer client attached to
+a fake CDP server; it starts no browser. `TEST_DOM_BROWSER=1` separately opts into
+headless DOM-probe tests, not desktop acceptance. Desktop tests require separate
+explicit approval, disposable jailed fixtures and continuous compositor evidence.

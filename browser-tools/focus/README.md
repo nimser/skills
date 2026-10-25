@@ -1,159 +1,151 @@
-# Browser focus boundary
+# Browser modes and focus boundary
 
 ## Policy and coverage
 
-No browser action is approved for background operation. The capability set is
-empty on every platform, including Linux/Niri/Brave. All CDP dispatch requires an
-unexpired owner-issued foreground lease. This is prevention, not a focus watcher
-that attempts to repair redirected typing afterward.
+`browser-tools-focus-v2` defaults to passive metadata and structural reads of
+confirmed owned pages. No lease is needed for that allowlist. Background clients
+cannot create/activate/navigate tabs, execute JavaScript, inject input, capture
+screenshots or enable auto-attachment, even if an elevated lease exists.
 
-Offline coverage: policy decisions, private-pipe framing, loopback gateway/client
-integration, raw-WebSocket bypass attempts, ownership, revocation, expiry,
-reconnects, legacy endpoint rejection and session timers use fake browser peers.
-They do not measure a compositor, real browser, browser sandbox or GPU.
-Firejail/bubblewrap pipe inheritance and live desktop/browser behavior require
-separate acceptance; do not describe them as verified from these tests.
+Foreground clients explicitly select owned-tab interaction and activation under
+a bounded lease. Direct clients explicitly select broader, browser-wide CDP;
+ordinary Puppeteer connections and automatic attachment are supported in that
+mode. Direct mode does not enforce owned-tab isolation. It is not a fallback.
 
-## Boundary
+Offline coverage uses fake browser pipes and includes a real Puppeteer client
+against a fake protocol peer. It verifies passive/foreground/direct separation,
+ownership, expiry/revocation, reconnects, discovery and timer checks, not real
+Brave behavior, a compositor, GPU, sandbox or Firejail/bubblewrap pipe inheritance.
+**Live supported-runtime and desktop focus acceptance remain pending.** No new
+background action class may be enabled by inference from fake/headless tests.
 
-- `serve.ts` owns the jailed browser's inherited CDP descriptors 3/4. The browser
-  has no remote-debugging TCP listener. The service never returns a raw endpoint.
-- `gateway.ts` exposes one loopback WebSocket connection at a time. HTTP tab
-  creation/activation/closure, origins, query-string routes and rebinding hosts
-  are rejected. Reconnection has no retry loop and cannot inherit old sessions.
-- `policy.ts` checks the host's approval file before every command. Unknown
-  methods, browser-global mutations, activation, protocol tunnels and automatic
-  attachment that can pause foreign pages are denied even under a lease.
-- `host.js` checks static broker policy before requesting resume, so an old broker
-  cannot start a raw-CDP browser before the client detects the mismatch.
-- `client.js` verifies the gateway's live HTTP identity before opening a socket,
-  then uses explicit flattened owned-page attachments, not Puppeteer's global
-  auto-attachment. Browser/tab identity is pinned by `browser-config.js`.
-  A failed owned-target lookup never creates a replacement automatically.
-- `lease.ts` requires a private, owner-controlled runtime directory and files.
-  Grant requires an interactive owner terminal and typed confirmation. Launch
-  consent is consumed once, before browser spawn. Browser restart requires a new
-  generation and launch grant. Agents must never issue or extend leases.
+## Transport
 
-A lease names specific target IDs, dispatch scopes and at most 300 seconds. Only
-confirmed blank targets created through the gateway join that lease. Popup,
-worker and foreign target IDs do not. Changing a lease does not confer ownership
-of targets created under the old lease; name approved targets explicitly.
-Root browser metadata is available only inside a foreground lease. Protocol
-scopes are not permission to mutate an account: JavaScript and trusted input can
-invoke site code, focus requests, autosave and arbitrary site side effects.
-Manual authentication/consent and payload authorization remain mandatory.
+- `serve.ts` owns inherited CDP descriptors 3/4; Brave has no debug TCP listener.
+- `gateway.ts` admits one loopback WebSocket peer at a time. HTTP tab verbs,
+  browser origins, rebinding hosts and query-string routes are rejected.
+- Default discovery is `/json/version`; elevated discovery is
+  `/foreground/json/version` or `/direct/json/version`. Corresponding WebSocket
+  paths append `/foreground` or `/direct` to the pinned base browser path. A
+  separate guarded metadata-only port supports Puppeteer's root `/json/version`
+  `browserURL` discovery; it returns the main gateway's direct WebSocket path and
+  accepts no CDP sockets or tab verbs. It also requires direct-CDP approval.
+- Elevated discovery/connection requires approval; every dispatch and incoming
+  forwarding checks it again. An elevated connection never downgrades silently.
+- `policy.ts` applies the passive allowlist without reading approval files.
+  Foreground methods require action scopes and approved/created targets. Direct
+  mode requires `direct-cdp` approval and permits unreviewed protocol methods.
+  Nested CDP tunnels, protocol exposure and certificate bypass remain forbidden.
+- `host.js` preflights static broker capabilities before requesting resume or an
+  explicit grant. `client.js` checks live generation/mode/URL identity before
+  opening its socket. Legacy v1/raw brokers fail before a launch request.
+- Launch permission is separate and single-use. Default `/resume` never launches,
+  even if a launch lease exists. `/foreground` validates an explicit bounded
+  confirmation before allowing startup. No automatic restart/reset/retry.
 
-Dispatch checks cannot cancel code or input already sent to the browser. A
-lease expiry, disconnect or timeout can leave an uncertain outcome, including
-scheduled JavaScript. Do not resume typing or declare a mutation absent merely
-because a lease expired. Hand back for owner inspection; never replay, activate,
-restore focus, close a window or extend approval automatically. Idle browser
-processes and old CDP attachments are left for approved lifecycle management.
+A scoped grant names targets and actions for at most 300 seconds. Confirmed blank
+owned tabs join its foreground scope; popups/workers do not. Replacing approval
+never confers old foreground permissions. Passive ownership survives a grant's
+expiry until target destruction or browser exit, not browser generation changes.
+Default target lists/events are filtered to owned pages. Direct mode can expose
+all Automation targets and allows focus-taking commands.
 
-The boundary covers trusted automation clients using the gateway, including raw
-WebSocket helpers. It is not an adversarial same-UID/administrator boundary:
-processes able to rewrite approval files, relaunch the browser outside its service
-or access its private descriptors can defeat it. Keep untrusted containers out
-of the host network/profile. An old deployed browser with a raw CDP listener is
-not protected by editing the shared client; stop it during approved rollout.
+This boundary governs trusted automation clients, including raw WebSocket
+helpers. It is not protection against same-UID/admin code able to rewrite grants
+or launch outside the service. Keep untrusted host-network containers and daily
+persona accounts out of this shared profile. The browser retains its sandbox,
+GPU, jail and native-key access in every mode.
 
-## Owner-issued foreground windows
+## Explicit approvals
 
-Run these commands manually on the host, only after approving the work scope and
-pausing other typing. The examples are not instructions for agents to grant
-approval. Installation of a lease is neither a login nor mutation authorization.
-
-For a stopped gateway, grant one launch and blank-tab creation window:
+After the user approves the affected profile, tab/actions and foreground window,
+pause unrelated typing and use:
 
 ```sh
-bun ~/skills/browser-tools/focus/lease.ts grant --launch \
-  --actions tab-create,inspect,javascript,navigate,pointer,screenshot --seconds 120
+~/skills/browser-tools/browser-start.js --foreground --seconds 120
+# Only for a separate, explicit request for browser-wide/direct CDP access:
+~/skills/browser-tools/browser-start.js --foreground --direct-cdp --seconds 120
+~/skills/browser-tools/browser-endpoint.js --direct-cdp
 ```
 
-Then the approved client can start/resume the service through
-`browser-start.js --host --resume`. Starting the service consumes launch consent.
-Existing profile tabs and accounts remain; this does not authorize inspecting
-them. The helper creates a blank owned tab only when there is no prior pin.
-Niri/window/tab selection for manual login is always performed by the owner.
+The flags assert explicit user consent and the broker records the short-lived
+lease; no host-terminal prompt is needed. Agents must not select/renew elevation
+because default attachment failed or an operation needs it. A direct-CDP request
+requires both flags. The shared helper caps approval by the remaining recorded
+task budget; direct clients must also honor task-budget changes.
 
-For an existing gateway, grant only required actions and an explicit owned target
-ID from that client's `owned-tab.json`:
+The host runtime is `$XDG_RUNTIME_DIR/browser-tools-focus-UID`, or the same private
+subdirectory of the temporary directory without XDG runtime. Its files and
+`BROWSER_TOOLS_FOCUS_RUNTIME_DIR` are canonical owner-controlled state, not an
+agent-writable container-local approval cache. Client instances remain under
+`BROWSER_TOOLS_RUNTIME_DIR`. Environment flags cannot select elevation.
+
+For narrower grants, the owner can still issue an interactive target/action lease:
 
 ```sh
 bun ~/skills/browser-tools/focus/lease.ts grant --target OWNED_TARGET_ID \
-  --actions inspect,javascript --seconds 60
+  --actions inspect,javascript,activate --seconds 60
 bun ~/skills/browser-tools/focus/lease.ts status
 bun ~/skills/browser-tools/focus/lease.ts revoke
 ```
 
-A new `tab-create` scope does not implicitly approve old tabs. Foreground scope
-`keyboard` means browser-owned CDP key events, never desktop/global injection.
-There is no `--force`, environment enable flag or background-to-foreground retry.
-Container-local browsers, browser proxy authentication, cookie export and
-automatic clean/keep-cookies session resets are unsupported.
+Selection and issuance are separate: a manually approved CDP helper must explicitly
+choose the `/foreground` WebSocket path; a manual grant does not switch a default
+client instance. Standard start commands issue their own broader scoped grant.
+Do not infer mode from the grant's action list. `activate` restores
+owned-page `Page.bringToFront`/`Target.activateTarget`; `keyboard` is CDP page
+input, never global desktop injection. Manual login, consent, payload approval
+and site restrictions are independent of foreground/direct permission.
 
-The host runtime defaults to `$XDG_RUNTIME_DIR/browser-tools-focus-UID`, or the
-same private subdirectory of the temporary directory when XDG runtime is absent.
-`BROWSER_TOOLS_FOCUS_RUNTIME_DIR` must name one canonical private directory shared
-by the host issuer, service and launcher; it is not a container-local lease cache.
-Client instance files remain under `BROWSER_TOOLS_RUNTIME_DIR` as before.
+Lease expiry/revocation blocks later dispatch, not already-sent work. Scripts,
+network writes, delayed focus requests and automatic attachments can outlive a
+connection or grant. Do not resume typing or declare an uncertain mutation absent
+because approval expired. Inspect before retrying; never restore focus, close
+windows, renew grants or restart browsers automatically.
 
 ## Desktop acceptance
 
-**Pending: no real platform/browser focus coverage.** Do not run a desktop
-experiment under the owner's live typing session. Obtain a dedicated foreground
-window, specify affected fixtures/processes and get separate approval before
-starting/stopping host services or applying host declarations.
+Obtain separate explicit approval for a dedicated foreground window, affected
+fixtures/processes and any host service changes. Do not experiment under ongoing
+personal typing. Use a fresh disposable `focus-fixture-*` jailed profile with the
+same Firejail/bubblewrap, sandbox, GPU and window-rule configuration as Automation.
+Never use the real Automation profile, source editors or account settings.
 
-Use a fresh disposable jailed browser profile with the same Firejail/bubblewrap,
-sandbox, GPU and window-rule configuration as Automation. Do not point the fixture
-at the real Automation profile, real source editors or account settings. Provision
-that fixture with owner approval; the measurement runner refuses non-fixture
-profile roots. Launch it through `serve.ts` with `--remote-debugging-pipe`, never
-with a raw TCP port or sandbox/GPU-disable flags. Use its separate focus runtime
-and instance state. Do not change the normal host service to run tests.
+Provision the fixture with approval. Launch via `serve.ts` and private pipes in a
+separate runtime; do not change the normal service for tests or expose a raw port.
+The runner refuses non-fixture roots. Set `BROWSER_TOOLS_DESKTOP_TEST_APPROVED=1`
+only for the approved experiment and supply a fixture foreground lease.
+`desktop.ts` serves loopback autosaving editor/reference/decoy fixtures. The owner
+manually selects the reference tab, then a decoy in another process, typing only
+disposable text. The runner never injects global input or activates/restores windows.
 
-`desktop.ts` serves loopback-only autosaving editor/reference/decoy fixtures and
-runs separate action scenarios through the guarded client. Start it only with
-`BROWSER_TOOLS_DESKTOP_TEST_APPROVED=1` after explicit owner approval and a fixture
-foreground lease. The owner manually selects the reference tab, then the decoy
-application in a separate browser/process and types only disposable test text.
-The runner never injects global keystrokes or activates/restores a window.
+Collect the continuous Niri `event-stream`, not before/after snapshots. Keep focus
+transition and trusted fixture-key counts, never titles, keys or typed text.
+Keyboard-grab coverage beyond Niri events is unknown. Each scenario's 150 ms
+observation interval is bounded evidence, not arbitrary-site/delayed-callback
+proof. Fixture `visibilitychange` measures active-tab transitions; target events
+count unexpected popups without persisting URLs. Missing/ended streams, redirected
+input, or inconclusive decoy samples fail acceptance, even after transient theft.
 
-Record the continuous Niri `event-stream`, not just before/after snapshots. The
-collector retains focus-transition and trusted fixture-key counts, never window
-titles, key values or typed text. Keyboard-grab coverage beyond Niri's focus
-events is unknown. Each scenario has a bounded 150 ms observation interval, not
-proof against arbitrary delayed site callbacks. Reference/editor `visibilitychange` events measure active-tab
-transitions in the isolated fixture browser; target events record unexpected
-popup creation without persisting URLs. Fail acceptance if the stream is missing,
-ends, or any intended decoy typing enters the autosaving editor, even transiently.
-
-The scenario matrix includes navigation, reload, background blank-tab creation,
-structural evaluation, DOM click/function-picker changes, coordinate clicks,
-direct-CDP clicks, screenshots, reconnects, a login wall and popup creation.
-Unknown/failed cases remain unsupported. Test failures/timeouts and lease
-expiry/revocation with the fake transport first; repeat approved failure cases on
-the supported desktop before enabling any background capability. No runner output
-automatically enables a capability or establishes arbitrary-site neutrality.
-
-Keep reports structural: runtime versions, scenario/status, compositor transition
-counts, reference visibility transitions, unexpected target counts, decoy input
-count, fixture-key count and fixture input count. Never commit typed text, editor contents, cookies,
-tokens, account IDs, full personal titles, screenshots or runtime endpoints.
+The matrix covers navigation, reload, blank-tab creation, evaluation, DOM/picker
+changes, coordinate/CDP clicks, screenshots, reconnects, login walls and popups.
+Test expiry/failure cases with fake transport first, then repeat approved cases
+on the supported desktop. Unknown/failed cases remain unsupported. No report
+automatically enables a background capability. Keep only versions, scenario/status
+and structural transition/visibility/target/input counts. Never commit editor
+contents, credentials, account IDs, screenshots or runtime endpoints.
 
 ## Recovery
 
-On denial, stop; use API/CLI. Never fall back to old ports, another driver, browser
-profile files, disabled guards or foreground activation. Closed/mismatched pins
-need explicit target replacement; an uncertain edit needs inspection, not replay.
+On denial, use the passive allowlist or API/CLI; ask before upgrading. Closed or
+mismatched pins require an explicit replacement. An uncertain edit needs
+inspection, not replay. Direct mode changes the trust scope, not the recovery rule.
 
-A failed launch consumes its ticket. Inspect service/sandbox/descriptor support
-and ask for a fresh bounded window after resolving the failure. Do not restart it
-automatically. A stale `launch.lock` requires owner-approved recovery after
-verifying no launch is in progress. Do not delete profile data to fix startup.
+A failed launch consumes its ticket. Inspect service/jail/descriptor support and
+request a fresh bounded window only after resolving the failure. A stale launch
+lock needs approved recovery after verifying no launch remains in progress. Never
+delete profile data, disable sandbox/GPU or fall back to an unconfined/raw browser.
 
-For host deployment/recovery use `~/.local/lib/browser-tools-host/README.md`.
-Roll back declarations together with the browser stopped; retaining API/CLI-only
-operation is safer than exposing an unguarded endpoint to regain functionality.
+Host deployment/recovery: `~/.local/lib/browser-tools-host/README.md`. Deploy the
+broker and shared protocol version together with browser lifecycle approval;
+keep the browser stopped if supported-runtime acceptance is unavailable.

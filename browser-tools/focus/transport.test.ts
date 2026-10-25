@@ -206,7 +206,47 @@ describe("guarded client and private-pipe integration without a desktop", () => 
     expect((await fetch(`http://127.0.0.1:${state.port}/direct/json/version`)).status).toBe(403);
   });
 
+  test.each(["disconnect", "revocation", "expiry"])("Puppeteer %s releases debugger waits before scoped navigation and passive reuse", async kind => {
+    const {default: puppeteer} = await import("puppeteer-core");
+    writePrivateJson(leasePath(), grant({actions: ["direct-cdp"], expiresAt: Date.now() + (kind === "expiry" ? 1000 : 60_000)}));
+    const direct = await puppeteer.connect({browserWSEndpoint: `${state.webSocketDebuggerUrl}/direct`, defaultViewport: null, protocolTimeout: 1000});
+    let guarded: any;
+    try {
+      expect(direct.isConnected()).toBe(true);
+      if (kind === "disconnect") await direct.disconnect();
+      else {
+        const disconnected = new Promise<void>(resolve => direct.once("disconnected", () => resolve()));
+        if (kind === "revocation") rmSync(leasePath());
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try { await Promise.race([disconnected, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Idle lease retirement timed out")), 2500); })]); }
+        finally { clearTimeout(timer); }
+      }
+      writePrivateJson(leasePath(), grant({actions: actions.filter(action => action !== "direct-cdp")}));
+      guarded = await connectBrowser();
+      await guarded.page("owned");
+      const {page, targetId} = await guarded.newOwnedPage();
+      await page.goto("http://127.0.0.1/fixture", {waitUntil: "domcontentloaded", timeout: 500});
+      await page.reload({waitUntil: "domcontentloaded", timeout: 500});
+      expect(page.url()).toBe("http://127.0.0.1/fixture");
+      await page.close();
+      expect((await guarded.targetInfos()).some((info: any) => info.targetId === targetId)).toBe(false);
+      await guarded.disconnect(); guarded = undefined;
+      rmSync(leasePath());
+      writeState({...state, interactionMode: "background"});
+      guarded = await connectBrowser();
+      const passive = await guarded.page("owned"), cdp = await passive.createCDPSession();
+      expect((await cdp.send("DOM.getDocument", {depth: 0})).root.nodeId).toBe(1);
+      await expect(passive.evaluate("fixture")).rejects.toThrow("FOCUS_BLOCKED");
+      await cdp.detach();
+    } finally {
+      await guarded?.disconnect();
+      await direct.disconnect();
+      writeState(state);
+    }
+  });
+
   test("broker approval requires explicit bounded confirmation and a separate direct mode", () => {
+    writePrivateJson(leasePath(), grant({actions: ["inspect"]}));
     const previousLease = readFileSync(leasePath(), "utf8");
     for (const request of [{}, {confirmed: true, mode: "background", seconds: 30, targets: []}, {confirmed: false, mode: "direct", seconds: 30, targets: []}, {confirmed: true, mode: "foreground", seconds: 301, targets: []}]) expect(() => approveForeground(request)).toThrow("FOCUS_BLOCKED");
     expect(readFileSync(leasePath(), "utf8")).toBe(previousLease);

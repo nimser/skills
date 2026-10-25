@@ -45,7 +45,8 @@ export async function connectGuardedBrowser(state, runtime, timeoutMs = 5000) {
     if (call) {
       pending.delete(message.id);
       clearTimeout(call.timer);
-      if (message.error) call.reject(message.error.code === -32001 ? blocked("selected mode, approval or operation denied by gateway") : new Error("Browser operation failed; inspect the outcome before another action"));
+      if (performance.now() >= call.deadline) call.reject(blocked(`${call.method} timed out; its outcome is uncertain`));
+      else if (message.error) call.reject(message.error.code === -32001 ? blocked("selected mode, approval or operation denied by gateway") : new Error("Browser operation failed; inspect the outcome before another action"));
       else call.resolve(message.result);
     } else for (const listener of listeners) listener(message);
   });
@@ -57,17 +58,20 @@ export async function connectGuardedBrowser(state, runtime, timeoutMs = 5000) {
     socket.addEventListener("error", () => { clearTimeout(timer); reject(blocked("gateway unavailable")); }, {once: true});
     socket.addEventListener("close", () => { clearTimeout(timer); reject(blocked("gateway refused the connection")); }, {once: true});
   });
-  async function send(method, params = {}, sessionId) {
-    checkSessionBudget(runtime);
-    if (socket.readyState !== WebSocket.OPEN) return Promise.reject(blocked("gateway disconnected"));
+  async function send(method, params = {}, sessionId, deadline = Infinity) {
+    const started = performance.now();
+    const expiresAt = Math.min(started + checkSessionBudget(runtime), Number.isFinite(deadline) ? deadline : started + 30_000);
+    const remaining = expiresAt - performance.now();
+    if (remaining <= 0) throw blocked(`${method} timed out; its outcome is uncertain`);
+    if (socket.readyState !== WebSocket.OPEN) throw blocked("gateway disconnected");
     const id = ++nextId;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { pending.delete(id); reject(blocked("operation timed out; its outcome is uncertain")); }, 30_000);
-      pending.set(id, {resolve, reject, timer});
+      const timer = setTimeout(() => { pending.delete(id); reject(blocked(`${method} timed out; its outcome is uncertain`)); }, remaining);
+      pending.set(id, {resolve, reject, timer, method, deadline: expiresAt});
       socket.send(JSON.stringify({id, method, params, ...(sessionId ? {sessionId} : {})}));
     });
   }
-  const session = sessionId => ({send: (method, params) => send(method, params, sessionId), detach: () => send("Target.detachFromTarget", {sessionId})});
+  const session = sessionId => ({send: (method, params, deadline) => send(method, params, sessionId, deadline), detach: () => send("Target.detachFromTarget", {sessionId})});
   const pages = new Map();
   const browser = {
     wsEndpoint: () => state.webSocketDebuggerUrl,
@@ -98,17 +102,24 @@ export async function connectGuardedBrowser(state, runtime, timeoutMs = 5000) {
       await cdp.send("Page.enable");
       const navigate = async (method, params, options = {}) => {
         if (options.waitUntil && options.waitUntil !== "domcontentloaded") throw blocked("unsupported navigation wait condition");
-        await cdp.send("Page.enable");
+        const timeout = options.timeout ?? 30_000;
+        if (!Number.isFinite(timeout) || timeout < 1 || timeout > 300_000) throw blocked("navigation timeout must be between 1 and 300000 milliseconds");
+        const deadline = performance.now() + timeout;
+        await cdp.send("Page.enable", {}, deadline);
         let complete;
         const loaded = new Promise(resolve => { complete = resolve; });
-        const listener = message => { if (message.sessionId === sessionId && message.method === "Page.domContentEventFired") complete(); };
+        const listener = message => { if (message.sessionId === sessionId && message.method === "Page.domContentEventFired" && performance.now() < deadline) complete(); };
         listeners.add(listener);
         let timer;
         try {
-          const result = await cdp.send(method, params);
+          const result = await cdp.send(method, params, deadline);
           if (result.errorText) throw new Error("Navigation failed; do not retry automatically");
-          if (method === "Page.reload" || result.loaderId) await Promise.race([loaded, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Navigation timed out; inspect before another action")), options.timeout || 30_000); })]);
-          const {frameTree} = await cdp.send("Page.getFrameTree");
+          if (method === "Page.reload" || result.loaderId) {
+            const remaining = Math.min(checkSessionBudget(runtime), deadline - performance.now());
+            if (remaining <= 0) throw blocked(`${method} DOM load timed out; its outcome is uncertain`);
+            await Promise.race([loaded, new Promise((_, reject) => { timer = setTimeout(() => reject(blocked(`${method} DOM load timed out; its outcome is uncertain`)), remaining); })]);
+          }
+          const {frameTree} = await cdp.send("Page.getFrameTree", {}, deadline);
           currentUrl = frameTree.frame.url;
         } finally { clearTimeout(timer); listeners.delete(listener); }
       };

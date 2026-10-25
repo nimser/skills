@@ -4,7 +4,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {actions, type Lease} from "./policy.ts";
-import {consumeLaunch, gatewayPath, leasePath, readPrivateJson, writePrivateJson} from "./lease.ts";
+import {approveForeground, consumeLaunch, gatewayPath, leasePath, readPrivateJson, writePrivateJson} from "./lease.ts";
 import {connectBrowser, newOwnedPage, ownedPage, writeState} from "../browser-config.js";
 
 const temporary = mkdtempSync(join(tmpdir(), "browser-focus-transport-"));
@@ -24,7 +24,7 @@ beforeAll(async () => {
   const deadline = Date.now() + 5000;
   while (!existsSync(gatewayPath()) && Date.now() < deadline && child.exitCode === null) await Bun.sleep(10);
   if (!existsSync(gatewayPath())) throw new Error("Fake private-pipe gateway did not start");
-  state = readPrivateJson(gatewayPath());
+  state = {...readPrivateJson(gatewayPath()), interactionMode: "foreground"};
   writeState(state);
 });
 
@@ -42,12 +42,13 @@ describe("guarded client and private-pipe integration without a desktop", () => 
   test("publishes a gateway identity, consumes launch consent and exposes no raw CDP HTTP verbs", async () => {
     expect(readPrivateJson(leasePath()).launch).toBe(false);
     const version = await (await fetch(`http://127.0.0.1:${state.port}/json/version`)).json() as any;
-    expect(version.focusProtocol).toBe("browser-tools-focus-v1");
+    expect(version.focusProtocol).toBe("browser-tools-focus-v2");
+    expect(version.interactionMode).toBe("background");
     for (const path of ["/json/new", "/json/list", "/json/close/owned", "/json/version?escape=1"]) expect((await fetch(`http://127.0.0.1:${state.port}${path}`)).status).toBe(403);
     expect((await fetch(`http://127.0.0.1:${state.port}/json/version`, {headers: {origin: "https://example.test"}})).status).toBe(403);
   });
 
-  test("launch tickets are single-use and non-interactive helpers cannot issue approval", async () => {
+  test("launch tickets are single-use and the manual grant command requires an owner terminal", async () => {
     expect(() => consumeLaunch()).toThrow("launch lease");
     const before = readFileSync(leasePath(), "utf8");
     const issuer = Bun.spawn([process.execPath, fileURLToPath(new URL("lease.ts", import.meta.url)), "grant", "--launch", "--actions", "tab-create"], {env: process.env, stdin: "ignore", stdout: "pipe", stderr: "pipe"});
@@ -62,6 +63,8 @@ describe("guarded client and private-pipe integration without a desktop", () => 
     const page = await newOwnedPage(browser);
     expect(await page.evaluate("fixture")).toEqual({fixture: true});
     expect((await page.screenshot()).toString()).toBe("fixture-image");
+    await page.bringToFront();
+    await page.keyboard.type("DISPOSABLE FIXTURE INPUT");
     await browser.disconnect();
     await Bun.sleep(10);
     browser = await connectBrowser();
@@ -119,6 +122,76 @@ describe("guarded client and private-pipe integration without a desktop", () => 
     expect(code).toBe(0);
     expect(error).toBe("");
     expect(output).toContain("fixture: true");
+  });
+
+  test("passive default works without approval and never upgrades because another lease exists", async () => {
+    writePrivateJson(leasePath(), grant());
+    let browser = await connectBrowser();
+    await newOwnedPage(browser);
+    await browser.disconnect();
+    rmSync(leasePath());
+    writeState({...state, interactionMode: "background"});
+    try {
+      browser = await connectBrowser();
+      const page = await ownedPage(browser), cdp = await page.createCDPSession();
+      expect((await cdp.send("DOM.getDocument", {depth: 0})).root.nodeId).toBe(1);
+      await expect(page.bringToFront()).rejects.toThrow("FOCUS_BLOCKED");
+      await cdp.detach(); await browser.disconnect();
+      const helper = Bun.spawn(["node", fileURLToPath(new URL("../browser-inspect.js", import.meta.url)), "input"], {env: process.env, stdout: "pipe", stderr: "pipe"});
+      const [output, code] = await Promise.all([new Response(helper.stdout).text(), helper.exited]);
+      expect(code).toBe(0); expect(JSON.parse(output).matches).toBe(1); expect(output).not.toContain("PRIVATE INPUT");
+      writePrivateJson(leasePath(), grant({actions: [...actions]}));
+      browser = await connectBrowser();
+      await expect((await ownedPage(browser)).evaluate("fixture")).rejects.toThrow("FOCUS_BLOCKED");
+      await browser.disconnect();
+    } finally { writeState(state); }
+  });
+
+  test("explicit direct endpoint works with ordinary Puppeteer attachment, then expires", async () => {
+    const {default: puppeteer} = await import("puppeteer-core");
+    writePrivateJson(leasePath(), grant({actions: ["direct-cdp"]}));
+    const browser = await puppeteer.connect({browserWSEndpoint: `${state.webSocketDebuggerUrl}/direct`, defaultViewport: null, protocolTimeout: 3000});
+    try {
+      expect(await browser.version()).toBe("Chrome/134.0.0.0");
+      expect((await browser.targets()).some(target => target.type() === "page")).toBe(true);
+      const cdp = await browser.targets().find(target => target.type() === "page")!.createCDPSession();
+      await cdp.send("Page.bringToFront");
+      await cdp.send("Network.setCacheDisabled", {cacheDisabled: true});
+      rmSync(leasePath());
+      await expect(browser.version()).rejects.toThrow();
+    } finally { await browser.disconnect(); }
+    writePrivateJson(leasePath(), grant({actions: ["direct-cdp"]}));
+    const discovered = await puppeteer.connect({browserURL: `http://127.0.0.1:${state.directPort}`, defaultViewport: null, protocolTimeout: 3000});
+    try { expect(await discovered.version()).toBe("Chrome/134.0.0.0"); }
+    finally { await discovered.disconnect(); }
+    rmSync(leasePath());
+    expect((await fetch(`http://127.0.0.1:${state.port}/direct/json/version`)).status).toBe(403);
+    expect((await fetch(`http://127.0.0.1:${state.directPort}/json/version`)).status).toBe(403);
+    expect((await fetch(`http://127.0.0.1:${state.directPort}/json/new`)).status).toBe(404);
+    expect((await fetch(`http://127.0.0.1:${state.directPort}/json/version`, {headers: {Origin: "https://example.test"}})).status).toBe(403);
+    writePrivateJson(leasePath(), grant({actions: ["inspect"]}));
+    expect((await fetch(`http://127.0.0.1:${state.port}/direct/json/version`)).status).toBe(403);
+  });
+
+  test("broker approval requires explicit bounded confirmation and a separate direct mode", () => {
+    const previousLease = readFileSync(leasePath(), "utf8");
+    for (const request of [{}, {confirmed: true, mode: "background", seconds: 30, targets: []}, {confirmed: false, mode: "direct", seconds: 30, targets: []}, {confirmed: true, mode: "foreground", seconds: 301, targets: []}]) expect(() => approveForeground(request)).toThrow("FOCUS_BLOCKED");
+    expect(readFileSync(leasePath(), "utf8")).toBe(previousLease);
+    const scoped = approveForeground({confirmed: true, mode: "foreground", seconds: 30, targets: ["owned"]});
+    expect(scoped.launch).toBe(false); expect(scoped.actions).not.toContain("direct-cdp"); expect(scoped.actions).toContain("activate");
+    expect(approveForeground({confirmed: true, mode: "direct", seconds: 30, targets: []}).actions).toContain("direct-cdp");
+  });
+
+  test("explicit approval for a stopped gateway creates a single-use launch ticket without launching", () => {
+    const previous = process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR, isolated = mkdtempSync(join(tmpdir(), "focus-launch-approval-"));
+    process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR = isolated;
+    try {
+      const approval = approveForeground({confirmed: true, mode: "foreground", seconds: 30, targets: []});
+      expect(approval.launch).toBe(true); expect(approval.browserId).toMatch(/^[A-Za-z0-9-]+$/);
+      expect(() => readPrivateJson(gatewayPath())).toThrow();
+      consumeLaunch();
+      expect(() => consumeLaunch()).toThrow("launch lease");
+    } finally { process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR = previous; rmSync(isolated, {recursive: true, force: true}); }
   });
 
   test("a saved marker does not authorize an unverified or port-reused raw endpoint", async () => {

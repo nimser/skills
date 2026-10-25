@@ -7,6 +7,16 @@ import {validateLaunch} from "./serve.ts";
 const now = 100_000;
 const lease = (extra: Partial<Lease> = {}): Lease => ({version: 1, browserId: "fixture-browser", issuedAt: now, expiresAt: now + 60_000, targets: ["owned"], actions: actions.filter(action => action !== "direct-cdp"), launch: false, ...extra});
 const command = (method: string, params: Record<string, unknown> = {}, sessionId?: string): Command => ({id: 1, method, params, ...(sessionId ? {sessionId} : {})});
+function acknowledgedGateway(readLease: () => unknown, upstream: (text: string) => void, clock = () => now): FocusGateway {
+  let root = 0;
+  const gateway = new FocusGateway("fixture-browser", readLease, text => {
+    const message = JSON.parse(text);
+    if (!message.sessionId && ["Target.attachToBrowserTarget", "Target.detachFromTarget"].includes(message.method)) {
+      gateway.fromBrowser(JSON.stringify({id: message.id, result: message.method === "Target.attachToBrowserTarget" ? {sessionId: `root-${++root}`} : {}}));
+    } else upstream(text);
+  }, clock);
+  return gateway;
+}
 const unsafe = ["Page.navigate", "Page.reload", "Target.createTarget", "Runtime.evaluate", "Runtime.callFunctionOn", "Page.captureScreenshot", "DOMSnapshot.captureSnapshot", "Input.dispatchMouseEvent", "Input.dispatchKeyEvent", "Target.activateTarget", "Page.bringToFront", "Target.setAutoAttach"];
 
 describe("passive default and explicit foreground/direct CDP", () => {
@@ -100,7 +110,7 @@ describe("passive default and explicit foreground/direct CDP", () => {
   });
   test("gateway reconnects retain passive ownership and filter unrelated metadata", () => {
     const sent: any[] = [], replies: any[] = [];
-    const gateway = new FocusGateway("fixture-browser", lease, text => sent.push(JSON.parse(text)), () => now);
+    const gateway = acknowledgedGateway(lease, text => sent.push(JSON.parse(text)));
     const peer = {send: (text: string) => replies.push(JSON.parse(text)), close() {}};
     gateway.connect(peer, "foreground");
     gateway.receive(peer, JSON.stringify(command("Target.createTarget", {url: "about:blank", background: true})));
@@ -115,7 +125,7 @@ describe("passive default and explicit foreground/direct CDP", () => {
   });
   test("does not deliver stale replies to another helper after a disconnect", () => {
     const sent: any[] = [], first: any[] = [], second: any[] = [];
-    const gateway = new FocusGateway("fixture-browser", lease, text => sent.push(JSON.parse(text)), () => now);
+    const gateway = acknowledgedGateway(lease, text => sent.push(JSON.parse(text)));
     const peer1 = {send: (text: string) => first.push(JSON.parse(text)), close() {}}, peer2 = {send: (text: string) => second.push(JSON.parse(text)), close() {}};
     gateway.connect(peer1); gateway.receive(peer1, JSON.stringify(command("Browser.getVersion")));
     gateway.disconnect(peer1); gateway.connect(peer2); gateway.receive(peer2, JSON.stringify(command("Browser.getVersion")));
@@ -125,7 +135,7 @@ describe("passive default and explicit foreground/direct CDP", () => {
   test("expiry blocks direct sends, replies and events without replay or background downgrade", () => {
     let clock = now;
     const sent: string[] = [], replies: string[] = [];
-    const gateway = new FocusGateway("fixture-browser", () => lease({actions: ["direct-cdp"]}), text => sent.push(text), () => clock);
+    const gateway = acknowledgedGateway(() => lease({actions: ["direct-cdp"]}), text => sent.push(text), () => clock);
     const peer = {send: (text: string) => replies.push(text), close() {}};
     gateway.connect(peer, "direct"); gateway.receive(peer, JSON.stringify(command("Runtime.evaluate")));
     clock += 60_000;
@@ -137,7 +147,7 @@ describe("passive default and explicit foreground/direct CDP", () => {
   });
   test.each(["null", "true", "0", "[]", '"text"', "{}", '{"id":null}', '{"id":1.5}', '{"id":1}', '{"id":1,"result":null}', '{"method":"event","params":null}', '{"method":null}', '{"method":"event","sessionId":1}', '{"method":"Target.attachedToTarget"}', '{"method":"Target.attachedToTarget","params":{}}', "{"])("malformed browser frame %s closes the peer without throwing or replaying", text => {
     let sends = 0, closes = 0, replies = 0;
-    const gateway = new FocusGateway("fixture-browser", () => lease({actions: ["direct-cdp"]}), () => { sends++; }, () => now);
+    const gateway = acknowledgedGateway(() => lease({actions: ["direct-cdp"]}), () => { sends++; });
     const peer = {send() { replies++; }, close() { closes++; }};
     gateway.connect(peer, "direct");
     expect(() => gateway.fromBrowser(text)).not.toThrow();
@@ -147,7 +157,7 @@ describe("passive default and explicit foreground/direct CDP", () => {
   });
   test("pipe errors close the helper as uncertain without retrying", () => {
     let sends = 0, closes = 0;
-    const gateway = new FocusGateway("fixture-browser", lease, () => { sends++; throw new Error(); }, () => now);
+    const gateway = acknowledgedGateway(lease, () => { sends++; throw new Error(); });
     const peer = {send() {}, close: () => { closes++; }};
     gateway.connect(peer); gateway.receive(peer, JSON.stringify(command("Browser.getVersion")));
     expect(sends).toBe(1); expect(closes).toBe(1);

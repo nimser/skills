@@ -19,10 +19,12 @@ export async function serve(command: string[], userDataDir: string): Promise<voi
   const writer = child.stdio[3] as Writable;
   const reader = child.stdio[4] as Readable;
   const gateway = new FocusGateway(lease.browserId, readLease, message => writer.write(message + "\0"));
+  const leaseTimer = setInterval(() => gateway.checkLease(), 100);
+  leaseTimer.unref();
   let ready = false, buffer = "", stopping = false, product = "Chrome/0";
   const server = Bun.serve<{mode: InteractionMode}>({
     hostname: "127.0.0.1", port: 0,
-    fetch(request, server) {
+    async fetch(request, server) {
       const url = new URL(request.url);
       if (request.headers.get("host") !== `127.0.0.1:${server.port}` || request.headers.has("origin") || request.headers.has("sec-fetch-site") || url.search) return new Response("Forbidden", {status: 403});
       for (const mode of ["background", "foreground", "direct"] as const) {
@@ -33,6 +35,9 @@ export async function serve(command: string[], userDataDir: string): Promise<voi
           try { new FocusPolicy(lease.browserId, readLease, Date.now, mode).connectionAllowed(); }
           catch { return new Response("Explicit foreground/direct-CDP approval is missing or expired", {status: 403}); }
           if (url.pathname === metadataPath) return Response.json(version);
+          if (!await gateway.available()) return new Response("Gateway unavailable; do not replay uncertain operations", {status: 503});
+          try { new FocusPolicy(lease.browserId, readLease, Date.now, mode).connectionAllowed(); }
+          catch { return new Response("Approval ended while awaiting session cleanup", {status: 403}); }
           if (server.upgrade(request, {data: {mode}})) return;
         }
       }
@@ -99,6 +104,7 @@ export async function serve(command: string[], userDataDir: string): Promise<voi
     await exited;
   } finally {
     clearTimeout(timeout);
+    clearInterval(leaseTimer);
     gateway.fail();
     server.stop(true);
     directServer.stop(true);

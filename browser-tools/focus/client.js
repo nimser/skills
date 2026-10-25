@@ -1,17 +1,20 @@
 import fs from "node:fs";
+import {modeEndpoint} from "./mode.js";
 
-export const FOCUS_PROTOCOL = "browser-tools-focus-v1";
-const blocked = reason => new Error(`FOCUS_BLOCKED: ${reason}. Use API/CLI or request an explicit foreground window; never activate or fall back to raw CDP.`);
+export const FOCUS_PROTOCOL = "browser-tools-focus-v2";
+const blocked = reason => new Error(`FOCUS_BLOCKED: ${reason}. Use passive inspection/API/CLI or explicitly request foreground/direct CDP; never upgrade automatically.`);
 
 export function checkSessionBudget(runtime) {
   const file = process.env.BROWSER_SESSION_GUARD_STATE || `${runtime}/session-guard.state`;
   let text;
   try { text = fs.readFileSync(file, "utf8"); } catch (error) {
-    if (error.code === "ENOENT" && process.env.BROWSER_GUARD_REQUIRE_SESSION !== "1") return;
+    if (error.code === "ENOENT" && process.env.BROWSER_GUARD_REQUIRE_SESSION !== "1") return Infinity;
     throw blocked("session timer is unavailable");
   }
   const [start, minutes] = text.split("\t").map(Number);
-  if (!Number.isFinite(start) || !Number.isFinite(minutes) || minutes <= 0 || start > Date.now() || start + minutes * 60_000 <= Date.now()) throw blocked("session timer is invalid or EXPIRED");
+  const remaining = start + minutes * 60_000 - Date.now();
+  if (!Number.isFinite(start) || !Number.isFinite(minutes) || minutes <= 0 || start > Date.now() || remaining <= 0) throw blocked("session timer is invalid or EXPIRED");
+  return remaining;
 }
 
 export async function connectGuardedBrowser(state, runtime, timeoutMs = 5000) {
@@ -21,12 +24,13 @@ export async function connectGuardedBrowser(state, runtime, timeoutMs = 5000) {
     throw blocked("legacy or unsupported browser endpoint; deploy the private-pipe focus gateway");
   }
   checkSessionBudget(runtime);
+  const endpoint = modeEndpoint(state);
   try {
-    const response = await fetch(`http://127.0.0.1:${state.port}/json/version`, {signal: AbortSignal.timeout(timeoutMs)});
+    const response = await fetch(`${endpoint.browserURL}/json/version`, {signal: AbortSignal.timeout(timeoutMs)});
     const identity = await response.json();
-    if (!response.ok || identity.focusProtocol !== FOCUS_PROTOCOL || identity.browserId !== state.browserId || identity.webSocketDebuggerUrl !== state.webSocketDebuggerUrl) throw new Error();
+    if (!response.ok || identity.focusProtocol !== FOCUS_PROTOCOL || identity.browserId !== state.browserId || identity.interactionMode !== endpoint.mode || identity.webSocketDebuggerUrl !== endpoint.browserWSEndpoint) throw new Error();
   } catch { throw blocked("gateway identity is unavailable or unverified; no protocol connection was opened"); }
-  const socket = new WebSocket(state.webSocketDebuggerUrl);
+  const socket = new WebSocket(endpoint.browserWSEndpoint);
   let nextId = 0;
   const pending = new Map();
   const listeners = new Set();
@@ -41,7 +45,7 @@ export async function connectGuardedBrowser(state, runtime, timeoutMs = 5000) {
     if (call) {
       pending.delete(message.id);
       clearTimeout(call.timer);
-      if (message.error) call.reject(message.error.code === -32001 ? blocked("foreground lease or operation denied by gateway") : new Error("Browser operation failed; inspect the outcome before another action"));
+      if (message.error) call.reject(message.error.code === -32001 ? blocked("selected mode, approval or operation denied by gateway") : new Error("Browser operation failed; inspect the outcome before another action"));
       else call.resolve(message.result);
     } else for (const listener of listeners) listener(message);
   });
@@ -117,6 +121,7 @@ export async function connectGuardedBrowser(state, runtime, timeoutMs = 5000) {
         },
         goto: (url, options) => navigate("Page.navigate", {url}, options),
         reload: options => navigate("Page.reload", {}, options),
+        bringToFront: () => cdp.send("Page.bringToFront"),
         evaluate: async (fn, ...args) => {
           const expression = typeof fn === "function" ? `(${fn.toString()})(...${JSON.stringify(args)})` : String(fn);
           const result = await cdp.send("Runtime.evaluate", {expression, awaitPromise: true, returnByValue: true});
@@ -129,6 +134,7 @@ export async function connectGuardedBrowser(state, runtime, timeoutMs = 5000) {
           if (options.path) fs.writeFileSync(options.path, bytes, {mode: 0o600});
           return bytes;
         },
+        keyboard: {type: text => cdp.send("Input.insertText", {text: String(text)})},
         mouse: {click: async (x, y) => {
           if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0) throw new Error("Invalid viewport coordinates");
           await cdp.send("Input.dispatchMouseEvent", {type: "mouseMoved", x, y});

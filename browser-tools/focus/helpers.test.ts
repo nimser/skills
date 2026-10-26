@@ -44,6 +44,15 @@ test("guarded host discovery requests resume only after static policy status", a
   expect(requests).toEqual(["http://127.0.0.1:19222/status", "http://127.0.0.1:19222/resume"]);
 });
 
+test("broker denials surface their bounded FOCUS_BLOCKED reason, never arbitrary bodies", async () => {
+  const denial = (body: unknown) => async (url: string) => url.endsWith("/status") ? Response.json(status) : Response.json(body, {status: 409});
+  await expect(requestHostResume(denial({error: "FOCUS_BLOCKED: automation browser exited during startup; inspect logs"}), {mode: "foreground", seconds: 30, targets: []}))
+    .rejects.toThrow("FOCUS_BLOCKED: automation browser exited during startup; inspect logs");
+  for (const body of [{error: "stack trace\nsecret"}, {error: "internal detail"}, {error: `FOCUS_BLOCKED: ${"x".repeat(600)}`}, "text"]) {
+    await expect(requestHostResume(denial(body), {mode: "foreground", seconds: 30, targets: []})).rejects.toThrow("FOCUS_BLOCKED: foreground approval/startup failed; inspect before retrying");
+  }
+});
+
 test("modes and durations must be explicit; default never selects or renews elevated access", () => {
   expect(startOptions([])).toEqual({mode: "background", seconds: 60});
   expect(startOptions(["--host", "--resume"])).toEqual({mode: "background", seconds: 60});

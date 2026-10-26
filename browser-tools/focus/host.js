@@ -1,5 +1,13 @@
 import {FOCUS_PROTOCOL} from "./client.js";
 
+/** Broker denials are single-line FOCUS_BLOCKED reasons; anything else falls back to a generic message. */
+async function brokerReason(/** @type {Response} */ response) {
+  try {
+    const reason = (await response.json())?.error;
+    return typeof reason === "string" && reason.startsWith("FOCUS_BLOCKED:") && reason.length <= 500 && !/[\x00-\x1f]/.test(reason) ? reason : undefined;
+  } catch { return undefined; }
+}
+
 /** @param {(url: string, options: RequestInit) => Promise<Response>} [request] */
 export async function requestHostResume(request = fetch, approval = {mode: "background", seconds: 60, targets: /** @type {string[]} */ ([])}) {
   if (!["background", "foreground", "direct"].includes(approval.mode)) throw new Error("FOCUS_BLOCKED: invalid mode");
@@ -13,7 +21,7 @@ export async function requestHostResume(request = fetch, approval = {mode: "back
   const explicit = approval.mode !== "background";
   const response = await request(`http://127.0.0.1:19222/${explicit ? "foreground" : "resume"}`, explicit ? {...options,
     headers: {...options.headers, "content-type": "application/json"}, body: JSON.stringify({...approval, confirmed: true})} : options);
-  if (!response.ok) throw new Error(`FOCUS_BLOCKED: ${explicit ? "foreground approval/startup failed; inspect before retrying" : "no running guarded browser; request explicit foreground startup"}`);
+  if (!response.ok) throw new Error(await brokerReason(response) ?? `FOCUS_BLOCKED: ${explicit ? "foreground approval/startup failed; inspect before retrying" : "no running guarded browser; request explicit foreground startup"}`);
   const state = await response.json();
   if (state?.mode !== "host" || state.focusProtocol !== FOCUS_PROTOCOL || typeof state.browserId !== "string"
     || !/^[A-Za-z0-9-]{1,100}$/.test(state.browserId) || !Number.isInteger(state.port) || state.port < 1 || state.port > 65535

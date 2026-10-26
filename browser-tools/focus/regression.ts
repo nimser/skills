@@ -282,7 +282,10 @@ export async function foregroundRegression(): Promise<void> {
     lines.close(); stream.kill("SIGTERM"); server.stop(true);
     if (previous === undefined) delete process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR;
     else process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR = previous;
-    report({cleanup: "fixture processes stopped", completed: finished, runtime: root});
+    const stopped = children.every(child => child.process.exitCode !== null);
+    // Failed runs keep their profiles and logs for inspection.
+    if (finished && stopped) rmSync(root, {recursive: true, force: true});
+    report({cleanup: "fixture processes stopped", completed: finished, runtime: finished && stopped ? "removed" : root});
   }
 }
 

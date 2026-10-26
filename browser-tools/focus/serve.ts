@@ -3,7 +3,7 @@ import {rmSync} from "node:fs";
 import type {Readable, Writable} from "node:stream";
 import {consumeLaunch, gatewayPath, readLease, writePrivateJson} from "./lease.ts";
 import {FocusGateway, gatewayVersion, parseBrowserFrame} from "./gateway.ts";
-import {FocusPolicy, FOCUS_PROTOCOL, type InteractionMode} from "./policy.ts";
+import {FocusDenied, FocusPolicy, FOCUS_PROTOCOL, type InteractionMode} from "./policy.ts";
 
 export function validateLaunch(command: string[]): void {
   if (!command.length || !command.includes("--remote-debugging-pipe")
@@ -118,5 +118,11 @@ export async function serve(command: string[], userDataDir: string): Promise<voi
 if (import.meta.main) {
   const args = process.argv.slice(2);
   if (args[0] !== "--user-data-dir" || !args[1] || args[2] !== "--") throw new Error("Usage: serve.ts --user-data-dir DIR -- JAILED_LAUNCHER --remote-debugging-pipe");
-  await serve(args.slice(3), args[1]);
+  try { await serve(args.slice(3), args[1]); }
+  catch (error) {
+    // Launches need a single-use ticket from `browser-start.js --foreground`; a bare service start is refused.
+    const consent = error instanceof FocusDenied ? " Start through `browser-start.js --foreground`, which issues a single-use launch ticket." : "";
+    console.error(`browser-tools gateway: ${error instanceof Error ? error.message : String(error)}${consent}`);
+    process.exit(1);
+  }
 }

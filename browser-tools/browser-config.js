@@ -110,8 +110,9 @@ export async function newOwnedPage(browser) {
 	return page;
 }
 
+// A pin from an earlier browser generation names no live tab, so foreground startup replaces it.
 export async function ensureOwnedPage(browser) {
-	if (!fs.existsSync(ownedTabFile())) return newOwnedPage(browser);
+	if (readOwnedTab()?.endpoint !== browser.wsEndpoint()) return newOwnedPage(browser);
 	return ownedPage(browser);
 }
 

@@ -48,6 +48,9 @@ test("host ownership and focus preflight without a real browser", async t => {
       await assert.rejects(ensureOwnedPage(browser), /owned tab was closed/);
       browser.wsEndpoint = () => "ws://127.0.0.1:12345/devtools/browser/restarted";
       await assert.rejects(ownedPage(browser), /No owned tab/);
+      ids = [{type: "page", targetId: "foreign"}, {type: "page", targetId: "owned"}];
+      assert.equal(await ensureOwnedPage(browser), page);
+      assert.equal(JSON.parse(readFileSync(join(directory, "owned-tab.json"), "utf8")).endpoint, "ws://127.0.0.1:12345/devtools/browser/restarted");
       clearState();
     });
     await t.test("all live entry points reject a legacy raw endpoint before connecting", async () => {

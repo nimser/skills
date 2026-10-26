@@ -62,10 +62,13 @@ const methodActions = new Map<string, Action>([
 ]);
 const alwaysDenied = new Set(["Target.sendMessageToTarget", "Target.exposeDevToolsProtocol", "Security.setIgnoreCertificateErrors"]);
 
+// CDP command ids are unique only within their session, and Puppeteer numbers each session from 1.
+const pendingKey = (id: unknown, sessionId: unknown) => `${typeof sessionId === "string" ? sessionId : ""}\u0000${id}`;
+
 export class FocusPolicy {
   readonly sessions = new Map<string, string>();
   readonly createdTargets = new Set<string>();
-  private readonly pending = new Map<number, {command: Command; epoch?: string}>();
+  private readonly pending = new Map<string, {command: Command; epoch?: string}>();
   private epoch?: string;
   private connectionEpoch?: string;
   constructor(readonly browserId: string, private readonly lease: () => unknown, private readonly now = Date.now,
@@ -109,14 +112,16 @@ export class FocusPolicy {
       if (!method.startsWith("Target.") && method !== "Browser.getVersion" && !sessionId) throw new FocusDenied("page actions require an owned CDP session");
       if (method === "Page.navigate" && (typeof params.url !== "string" || (!/^https?:\/\//i.test(params.url) && params.url !== "about:blank"))) throw new FocusDenied("only HTTP(S) and blank navigation are supported");
     }
-    if (this.pending.size >= 1000 || this.pending.has(command.id)) throw new FocusDenied("duplicate or excessive pending commands");
-    this.pending.set(command.id, {command, ...(this.mode !== "background" ? {epoch: leaseKey(this.currentLease())} : {})});
+    const key = pendingKey(command.id, sessionId);
+    if (this.pending.size >= 1000 || this.pending.has(key)) throw new FocusDenied("duplicate or excessive pending commands");
+    this.pending.set(key, {command, ...(this.mode !== "background" ? {epoch: leaseKey(this.currentLease())} : {})});
   }
   observe(message: any): void {
-    const request = this.pending.get(message.id);
+    const key = pendingKey(message.id, message.sessionId);
+    const request = message.id === undefined ? undefined : this.pending.get(key);
     const command = request?.command;
     if (command) {
-      this.pending.delete(message.id);
+      this.pending.delete(key);
       if (!message.error) {
         if (command.method === "Target.createTarget" && typeof message.result?.targetId === "string") {
           try { if (request!.epoch === leaseKey(this.currentLease())) this.createdTargets.add(message.result.targetId); } catch {}

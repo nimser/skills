@@ -33,7 +33,7 @@ describe("passive default and explicit foreground/direct CDP", () => {
       policy.observe({id: 1, result: request.method === "Target.attachToTarget" ? {sessionId: "session"} : {}});
     }
     for (const method of ["Page.enable", "Page.getFrameTree", "DOM.getDocument", "DOM.querySelectorAll", "DOM.describeNode", "DOM.getAttributes"]) {
-      policy.authorize(command(method, {}, "session")); policy.observe({id: 1, result: {}});
+      policy.authorize(command(method, {}, "session")); policy.observe({id: 1, sessionId: "session", result: {}});
     }
     for (const request of [command("DOM.getDocument"), command("Target.attachToTarget", {targetId: "foreign", flatten: true}), command("DOM.getDocument", {}, "foreign"), command("Target.getTargetInfo")]) expect(() => policy.authorize(request)).toThrow("FOCUS_BLOCKED");
   });
@@ -49,7 +49,7 @@ describe("passive default and explicit foreground/direct CDP", () => {
     const policy = new FocusPolicy("fixture-browser", () => active, () => clock, "foreground");
     policy.sessions.set("session", "owned");
     for (const request of [command("Target.activateTarget", {targetId: "owned"}), command("Page.bringToFront", {}, "session"), command("Page.navigate", {url: "https://example.test"}, "session"), command("Input.dispatchMouseEvent", {}, "session"), command("Input.insertText", {}, "session")]) {
-      policy.authorize(request); policy.observe({id: 1, result: {}});
+      policy.authorize(request); policy.observe({id: 1, sessionId: request.sessionId, result: {}});
     }
     active = lease({actions: ["inspect"]});
     expect(() => policy.authorize(command("Page.bringToFront", {}, "session"))).toThrow("approval changed");
@@ -68,13 +68,21 @@ describe("passive default and explicit foreground/direct CDP", () => {
     expect(() => policy.authorize(command("Target.setAutoAttach", {autoAttach: true}))).toThrow("separate browser-wide");
     active = lease({actions: ["direct-cdp"]});
     for (const request of [command("Target.setAutoAttach", {autoAttach: true, flatten: true}), command("Target.attachToBrowserTarget"), command("Network.getCookies", {}, "direct-session"), command("Page.bringToFront", {}, "direct-session"), command("Browser.getWindowForTarget", {targetId: "foreign"})]) {
-      policy.authorize(request); policy.observe({id: 1, result: {}});
+      policy.authorize(request); policy.observe({id: 1, sessionId: request.sessionId, result: {}});
     }
     policy.observe({method: "Target.attachedToTarget", params: {sessionId: "popup-session", targetInfo: {targetId: "popup"}}});
     expect(policy.sessions.get("popup-session")).toBe("popup");
     expect(policy.ownedTargets.has("popup")).toBe(false);
     active = undefined;
     expect(() => policy.authorize(command("Runtime.evaluate", {}, "popup-session"))).toThrow();
+  });
+  test("command ids are tracked per session, as Puppeteer numbers each session from 1", () => {
+    const policy = new FocusPolicy("fixture-browser", () => lease({actions: ["direct-cdp"]}), () => now, "direct");
+    for (const sessionId of [undefined, "page-a", "page-b"]) policy.authorize(command("Page.enable", {}, sessionId));
+    expect(() => policy.authorize(command("Page.enable", {}, "page-a"))).toThrow("duplicate");
+    policy.observe({id: 1, sessionId: "page-a", result: {}});
+    policy.authorize(command("Page.enable", {}, "page-a"));
+    expect(() => policy.authorize(command("Page.enable"))).toThrow("duplicate");
   });
   test("nested protocol escapes and certificate bypasses remain blocked in direct mode", () => {
     for (const method of ["Target.sendMessageToTarget", "Target.exposeDevToolsProtocol", "Security.setIgnoreCertificateErrors"]) expect(() => new FocusPolicy("fixture-browser", () => lease({actions: ["direct-cdp"]}), () => now, "direct").authorize(command(method))).toThrow("forbidden");
@@ -154,6 +162,18 @@ describe("passive default and explicit foreground/direct CDP", () => {
     expect(closes).toBe(1); expect(replies).toBe(0);
     gateway.receive(peer, JSON.stringify(command("Browser.getVersion")));
     expect(sends).toBe(0);
+  });
+  test("direct helpers may reuse a command id concurrently on different auto-attached sessions", () => {
+    const sent: any[] = [], replies: any[] = [];
+    const gateway = acknowledgedGateway(() => lease({actions: ["direct-cdp"]}), text => sent.push(JSON.parse(text)));
+    const peer = {send: (text: string) => replies.push(JSON.parse(text)), close() {}};
+    gateway.connect(peer, "direct");
+    for (const target of ["page-a", "page-b"]) gateway.fromBrowser(JSON.stringify({method: "Target.attachedToTarget", sessionId: "root-1", params: {sessionId: target, targetInfo: {targetId: target, type: "page"}, waitingForDebugger: true}}));
+    for (const sessionId of ["page-a", "page-b"]) gateway.receive(peer, JSON.stringify(command("Page.enable", {}, sessionId)));
+    expect(replies.filter(reply => reply.error)).toEqual([]);
+    expect(sent.map(message => message.sessionId)).toEqual(["page-a", "page-b"]);
+    for (const message of [...sent].reverse()) gateway.fromBrowser(JSON.stringify({id: message.id, sessionId: message.sessionId, result: {}}));
+    expect(replies.slice(-2)).toEqual([{id: 1, sessionId: "page-b", result: {}}, {id: 1, sessionId: "page-a", result: {}}]);
   });
   test("pipe errors close the helper as uncertain without retrying", () => {
     let sends = 0, closes = 0;

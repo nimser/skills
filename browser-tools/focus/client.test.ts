@@ -122,6 +122,15 @@ test("late navigation responses do not trigger frame queries or replay after tim
   });
 });
 
+test("an elevated-mode denial names the passive recovery command", async () => {
+  await fixture(async ({page, intercept}) => {
+    intercept((command, _reply, socket) => {
+      socket.send(JSON.stringify({id: command.id, error: {code: -32001, message: "denied"}})); return true;
+    });
+    await expect(page.goto("http://127.0.0.1/fixture", {timeout: 500})).rejects.toThrow("foreground approval may have expired, so run browser-start.js to return to passive inspection");
+  });
+});
+
 test.each([0, -1, Infinity, NaN, 300_001])("invalid navigation timeout %s is rejected before dispatch", async timeout => {
   await fixture(async ({page, requests}) => {
     await expect(page.goto("http://127.0.0.1/fixture", {timeout})).rejects.toThrow("navigation timeout must be");

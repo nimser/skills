@@ -25,11 +25,12 @@ export async function connectGuardedBrowser(state, runtime, timeoutMs = 5000) {
   }
   checkSessionBudget(runtime);
   const endpoint = modeEndpoint(state);
+  const elevated = endpoint.mode === "background" ? "" : `; ${endpoint.mode} approval may have expired, so run browser-start.js to return to passive inspection`;
   try {
     const response = await fetch(`${endpoint.browserURL}/json/version`, {signal: AbortSignal.timeout(timeoutMs)});
     const identity = await response.json();
     if (!response.ok || identity.focusProtocol !== FOCUS_PROTOCOL || identity.browserId !== state.browserId || identity.interactionMode !== endpoint.mode || identity.webSocketDebuggerUrl !== endpoint.browserWSEndpoint) throw new Error();
-  } catch { throw blocked("gateway identity is unavailable or unverified; no protocol connection was opened"); }
+  } catch { throw blocked(`gateway identity is unavailable or unverified; no protocol connection was opened${elevated}`); }
   const socket = new WebSocket(endpoint.browserWSEndpoint);
   let nextId = 0;
   const pending = new Map();
@@ -46,7 +47,7 @@ export async function connectGuardedBrowser(state, runtime, timeoutMs = 5000) {
       pending.delete(message.id);
       clearTimeout(call.timer);
       if (performance.now() >= call.deadline) call.reject(blocked(`${call.method} timed out; its outcome is uncertain`));
-      else if (message.error) call.reject(message.error.code === -32001 ? blocked("selected mode, approval or operation denied by gateway") : new Error("Browser operation failed; inspect the outcome before another action"));
+      else if (message.error) call.reject(message.error.code === -32001 ? blocked(`selected mode, approval or operation denied by gateway${elevated}`) : new Error("Browser operation failed; inspect the outcome before another action"));
       else call.resolve(message.result);
     } else for (const listener of listeners) listener(message);
   });

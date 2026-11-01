@@ -22,6 +22,9 @@ Web & Browser
 Data
 └── teable                          # Teable bases: typed fields, kanban views, records
 
+3D Printing
+└── orcaslicer                      # profiles as code, setting interactions and troubleshooting
+
 Utilities
 └── vscode                          # VS Code diffs & file comparison
 ```

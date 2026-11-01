@@ -88,10 +88,25 @@ On a clean tree, ordinary `--push` uses the `--push-only` checks to publish
 existing commits; dry runs and explicit planning options do not use this fallback.
 After a blocked push, call the registered `commit` tool with `push: true` and
 `pushOnly: true` (no planning options), or run
-`bash {baseDir}/commit.sh --push-only`. This explicitly publishes from a clean,
-attached branch. The driver verifies that its live upstream has not
-moved and refuses dirty, detached, diverged or up-to-date branches. Neither path
-creates another commit or invokes the planner.
+`bash {baseDir}/commit.sh --push-only`. Publication accepts a clean tree or the
+unchanged exclusions recorded before the failed push. The private receipt binds
+HEAD, index, working files, branch and push destination for 24 hours; success
+removes it. The attached branch must be ahead without divergence, with a verified
+live upstream; a retained initial commit requires an empty destination branch.
+Neither path stages files, creates a commit or invokes the planner.
+
+Without a receipt, review the completed commits and every pending file before
+using `pushOnly: true` with an exclusion-only `groupsFile` containing
+`{"groups":[],"excluded":[{"path":"reference.pdf","reason":"Unrelated reference"}]}`.
+This legacy recovery must cover every pending path and cannot include commit
+groups. Explain the recovery and report every exclusion. Never delete, move or
+temporarily ignore excluded files to make publication pass.
+
+SSH remotes on gitlab.com use repository deploy keys backed up in
+`gopass bg/gitlab.com/deploy-keys/project-<id>`. Authenticated `glab` provisions or
+restores the same key without deleting unrelated keys. Git transport disables the
+SSH agent and does not require a YubiKey touch; commit signing is unchanged.
+Vault remote synchronization is separate from verifying its local backup.
 
 ### Certificate and key files
 

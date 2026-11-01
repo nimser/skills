@@ -117,5 +117,6 @@ Outside the documented session override, never run `git add`, `git commit` or
 or work around a policy refusal. The override must verify restoration before
 pushing; partial completion is not permission to publish.
 
-A nested repository with its own pending work is refused by design: commit it
-from inside that repository first, then run the driver again in the parent.
+A non-ignored nested repository with its own pending work is refused by design:
+commit it from inside that repository first, then run the driver again in the
+parent. Nested repositories ignored by the parent do not block its commits or pushes.

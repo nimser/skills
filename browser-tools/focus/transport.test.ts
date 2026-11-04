@@ -214,7 +214,7 @@ describe("guarded client and private-pipe integration without a desktop", () => 
     const beneficiary = "00000000-0000-0000-0000-000000000002", issuer = "00000000-0000-0000-0000-000000000001";
     const output = join(temporary, `exception-${mode}-${networkMode}.json`);
     const requests = join(temporary, `broker-${mode}-${networkMode}.log`);
-    const {lease} = exceptionGrant(["--session", beneficiary, "--until", new Date(Date.now() + 2 * 60 * 60_000).toISOString(), "--target", "owned", "--output", output, ...(mode === "direct" ? ["--direct-cdp"] : [])], issuer, state.browserId);
+    const {lease} = exceptionGrant(["--session", beneficiary, "--duration", "8h", "--target", "owned", "--output", output, ...(mode === "direct" ? ["--direct-cdp"] : [])], issuer, state.browserId);
     writePrivateJson(leasePath(), lease);
     writeFileSync(output, JSON.stringify({...state, interactionMode: mode, timeException: lease.timeException}), {mode: 0o600});
     writeFileSync(join(temporary, "client/owned-tab.json"), JSON.stringify({endpoint: state.webSocketDebuggerUrl, targetId: "owned"}));

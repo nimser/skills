@@ -6,6 +6,8 @@ import {actions, FOCUS_PROTOCOL, FocusDenied, parseLease, type Lease, type TimeE
 import {gatewayPath, leasePath, readPrivateJson, writePrivateJson} from "./lease.ts";
 import {TIME_EXCEPTIONS, validTimeException} from "./limits.js";
 
+const usage = "Use grant --session ID (--duration 8h | --until ISO_TIMESTAMP) --target ID --output ABSOLUTE_FILE [--direct-cdp]; host third-party agent only";
+
 export function hostAgent(): string {
   if (existsSync("/.dockerenv") || existsSync("/run/.containerenv")) throw new FocusDenied("time exceptions can only be issued on the host");
   const detection = spawnSync("systemd-detect-virt", ["--container"], {encoding: "utf8"});
@@ -16,21 +18,35 @@ export function hostAgent(): string {
 }
 
 export function exceptionGrant(args: string[], issuerSessionId: string, browserId: string, now = Date.now()): {lease: Lease; output: string; mode: "foreground" | "direct"} {
-  let sessionId = "", until = "", output = "", direct = false;
+  let sessionId = "", until = "", duration = "", output = "", direct = false;
   const targets: string[] = [], seen = new Set<string>();
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!;
     if (arg !== "--target" && seen.has(arg)) throw new Error(`Duplicate option: ${arg}`);
     seen.add(arg);
+    if (arg !== "--direct-cdp" && (!args[index + 1] || args[index + 1]!.startsWith("--"))) throw new Error(usage);
     if (arg === "--session") sessionId = args[++index]!;
     else if (arg === "--until") until = args[++index]!;
+    else if (arg === "--duration") duration = args[++index]!;
     else if (arg === "--output") output = args[++index]!;
     else if (arg === "--target") targets.push(args[++index]!);
     else if (arg === "--direct-cdp") direct = true;
-    else throw new Error("Use grant --session ID --until ISO_TIMESTAMP --target ID --output ABSOLUTE_FILE [--direct-cdp]");
+    else throw new Error(usage);
   }
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/.test(until) || !isAbsolute(output) || !targets.length) throw new FocusDenied("an explicit expiry with timezone, owned target and absolute receipt path are required");
-  const timeException: TimeException = {version: 1, sessionId, issuerSessionId, issuedAt: now, expiresAt: Date.parse(until), token: randomBytes(32).toString("hex")};
+  if (seen.has("--until") === seen.has("--duration")) throw new FocusDenied("choose exactly one of --duration or --until");
+  let expiresAt: number;
+  if (seen.has("--duration")) {
+    const match = /^([1-9]\d*)(s|m|h|d)$/.exec(duration);
+    if (!match) throw new FocusDenied("--duration requires a positive integer with unit s, m, h or d (for example 8h)");
+    const units: Record<string, number> = {s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000};
+    expiresAt = now + Number(match[1]) * units[match[2]!]!;
+  } else {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/.test(until)) throw new FocusDenied("--until requires an explicit expiry with timezone");
+    expiresAt = Date.parse(until);
+  }
+  if (!Number.isFinite(new Date(expiresAt).getTime())) throw new FocusDenied("expiry must be a representable date");
+  if (!isAbsolute(output) || !targets.length) throw new FocusDenied("an owned target and absolute receipt path are required");
+  const timeException: TimeException = {version: 1, sessionId, issuerSessionId, issuedAt: now, expiresAt, token: randomBytes(32).toString("hex")};
   if (!validTimeException(timeException, now)) throw new FocusDenied("a time exception requires a different beneficiary session and a future expiry");
   const lease = parseLease({version: 1, browserId, issuedAt: now, expiresAt: timeException.expiresAt, targets,
     actions: actions.filter(action => direct || action !== "direct-cdp"), launch: false, timeException}, browserId, now);
@@ -56,6 +72,6 @@ if (import.meta.main) {
   try {
     const [command, ...args] = process.argv.slice(2);
     if (command === "grant") await issueException(args);
-    else throw new Error("Use grant --session ID --until ISO_TIMESTAMP --target ID --output ABSOLUTE_FILE [--direct-cdp]; host third-party agent only");
+    else throw new Error(usage);
   } catch (error) { console.error((error as Error).message); process.exitCode = 1; }
 }

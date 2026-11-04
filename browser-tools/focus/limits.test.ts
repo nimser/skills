@@ -53,6 +53,28 @@ test("exceptions require a distinct issuer, explicit zoned expiry, target and pr
   expect(() => parseLease(lease, "fixture-browser", lease.expiresAt)).toThrow();
 });
 
+test.each([
+  ["1s", 1000], ["30m", 30 * 60_000], ["8h", 8 * 60 * 60_000], ["2d", 2 * 24 * 60 * 60_000],
+] as const)("a %s exception duration fixes both deadlines at issuance", (duration, milliseconds) => {
+  const relative = args.map(value => value === "--until" ? "--duration" : value === until ? duration : value);
+  const {lease} = exceptionGrant(relative, issuer, "fixture-browser", now);
+  expect(lease.issuedAt).toBe(now);
+  expect(lease.expiresAt).toBe(now + milliseconds);
+  expect(lease.timeException!.expiresAt).toBe(lease.expiresAt);
+  expect(exceptionRemaining(lease.timeException, beneficiary, now + milliseconds - 1)).toBe(1);
+  expect(() => exceptionRemaining(lease.timeException, beneficiary, lease.expiresAt)).toThrow("expired");
+  expect(() => exceptionGrant(relative, beneficiary, "fixture-browser", now)).toThrow("different beneficiary");
+});
+
+test("exception time options reject ambiguity, missing values, malformed durations and overflow", () => {
+  const untimed = args.filter(value => value !== "--until" && value !== until);
+  for (const bad of [
+    untimed, [...args, "--duration", "8h"], [...args, "--duration", ""],
+    [...untimed, "--until"], [...untimed, "--duration"], [...untimed, "--duration", "8h", "--duration", "8h"],
+    ...["", "0h", "-8h", "+8h", "1.5h", "8", "8hours", "8H", " 8h", "8h ", "1h30m", "Infinityh", "9007199254740992s", "100000001d"].map(duration => [...untimed, "--duration", duration]),
+  ]) expect(() => exceptionGrant(bad, issuer, "fixture-browser", now)).toThrow();
+});
+
 test("an exceptional lease cannot be reused by normal clients or a different capability", () => {
   const {lease} = grant();
   for (const token of [undefined, "a".repeat(64)]) expect(() => new FocusPolicy("fixture-browser", () => lease, () => now, "foreground", undefined, token).connectionAllowed()).toThrow("beneficiary capability");
@@ -126,7 +148,7 @@ test("host exception issuance verifies gateway capability, refuses self-grants a
   const state = {mode: "host", port: server.port, directPort: server.port! + 1, browserId: "fixture-browser", focusProtocol: "browser-tools-focus-v2", userDataDir: "/fixture/profile", webSocketDebuggerUrl: `ws://127.0.0.1:${server.port}/devtools/browser/fixture-browser`};
   writeFileSync(join(focus, "gateway.json"), JSON.stringify(state), {mode: 0o600});
   const output = join(temporary, "cli-receipt.json");
-  const cliArgs = args.map(value => value === join(temporary, "receipt.json") ? output : value);
+  const cliArgs = args.map(value => value === join(temporary, "receipt.json") ? output : value === "--until" ? "--duration" : value === until ? "8h" : value);
   const env = {PI_SESSION_ID: issuer, BROWSER_TOOLS_FOCUS_RUNTIME_DIR: focus};
   try {
     const legacy = script("exception.ts", ["grant", ...cliArgs], env);
@@ -145,6 +167,7 @@ test("host exception issuance verifies gateway capability, refuses self-grants a
     const receipt = JSON.parse(readFileSync(output, "utf8"));
     expect(receipt.timeException.issuerSessionId).toBe(issuer);
     expect(receipt.timeException.sessionId).toBe(beneficiary);
+    expect(receipt.timeException.expiresAt - receipt.timeException.issuedAt).toBe(8 * 60 * 60_000);
     expect(statSync(output).mode & 0o777).toBe(0o600);
     expect(await new Response(issued.stdout).text()).not.toContain(receipt.timeException.token);
     const lease = JSON.parse(readFileSync(join(focus, "foreground.json"), "utf8"));

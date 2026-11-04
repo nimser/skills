@@ -26,6 +26,18 @@ proof of desktop safety. Even a DOM click can invoke focus-changing site code.
 Passive reads do not cancel old site callbacks or guarantee site-initiated focus
 behavior. Stop if task preconditions or the supported-runtime evidence are absent.
 
+## Network choice
+
+Network defaults to the host proxy, independently of interaction mode. Only an
+explicit user approval to bypass it permits `browser-start.js --network=direct`.
+That option affects every Automation tab and extension; it neither grants
+foreground access nor launches a stopped browser by itself. `--direct-cdp` does
+not change network routing. See [PROXY.md](PROXY.md).
+
+The network is fixed at launch. Mismatched requests fail before granting approval
+or touching the running browser; never restart, switch or fall back to direct
+access automatically. Startup output and client state report `networkMode`.
+
 ## Default workflow
 
 ```sh
@@ -177,7 +189,8 @@ The beneficiary explicitly selects the private receipt with
 Add `--direct-cdp` only if the exception separately authorizes it. Do not combine
 `--exception` with `--seconds`. The receipt replaces both time limits with one
 absolute deadline, without resetting the original task timer, launching a browser
-or changing its network. It requires the running gateway's exception capability;
+or changing its network. It passively verifies the requested network and pinned generation through the
+broker before connecting and requires the running gateway's exception capability;
 legacy gateways fail closed. Other sessions cannot select the receipt through
 shared helpers, and normal CDP endpoints cannot use the exceptional lease.
 Puppeteer under an exception must use `browserWSEndpoint`, not `browserURL`.

@@ -74,6 +74,20 @@ or launch outside the service. Keep untrusted host-network containers and daily
 persona accounts out of this shared profile. The browser retains its sandbox,
 GPU, jail and native-key access in every mode.
 
+## Launch-time network choice
+
+The host defaults to proxy routing for both passive attachment and explicit
+foreground/direct-CDP requests. `--network=direct` asserts separate explicit
+approval to bypass the proxy for the whole Automation profile; `--direct-cdp`
+only changes protocol permissions. The network flag alone never launches a
+browser. See [../PROXY.md](../PROXY.md).
+
+The broker advertises `networkSelection: generation-v1` and reports `networkMode`
+in status and returned state. Each browser generation has one network mode.
+An incompatible request fails before a grant, restart or switch; a failed proxy
+never causes direct access. A network change needs an approved stop and a fresh
+launch request, not an attachment retry.
+
 ## Explicit approvals
 
 After the user approves the affected profile, tab/actions and foreground window,
@@ -160,7 +174,11 @@ With the beneficiary's original `PI_SESSION_ID`, select the receipt explicitly:
 # For a separately approved direct-CDP exception, add --direct-cdp.
 ```
 
-Do not pass `--seconds`. The exception uses its fixed expiry as both foreground
+Do not pass `--seconds`. Network selection still defaults to proxy; an approved
+direct-network browser requires `--network=direct` on receipt selection too.
+The helper passively verifies network and generation with the broker without
+requesting a new grant, launching or switching the browser.
+The exception uses its fixed expiry as both foreground
 and task deadline, even if the original task timer has expired. It does not reset
 that timer or create an automatically renewable budget. Ordinary task `start`
 refuses existing timers and budgets above 90 minutes. An explicit new task needs

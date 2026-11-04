@@ -207,26 +207,43 @@ describe("guarded client and private-pipe integration without a desktop", () => 
     expect((await fetch(`http://127.0.0.1:${state.port}/direct/json/version`)).status).toBe(403);
   });
 
-  test.each(["foreground", "direct"] as const)("host time-exception receipt selects only its beneficiary in %s mode", async mode => {
+  test.each([
+    {mode: "foreground", networkMode: "proxy"}, {mode: "direct", networkMode: "proxy"},
+    {mode: "foreground", networkMode: "direct"}, {mode: "direct", networkMode: "direct"},
+  ] as const)("host time-exception receipt selects only its beneficiary in $mode mode on $networkMode network", async ({mode, networkMode}) => {
     const beneficiary = "00000000-0000-0000-0000-000000000002", issuer = "00000000-0000-0000-0000-000000000001";
-    const output = join(temporary, `exception-${mode}.json`);
+    const output = join(temporary, `exception-${mode}-${networkMode}.json`);
+    const requests = join(temporary, `broker-${mode}-${networkMode}.log`);
     const {lease} = exceptionGrant(["--session", beneficiary, "--until", new Date(Date.now() + 2 * 60 * 60_000).toISOString(), "--target", "owned", "--output", output, ...(mode === "direct" ? ["--direct-cdp"] : [])], issuer, state.browserId);
     writePrivateJson(leasePath(), lease);
     writeFileSync(output, JSON.stringify({...state, interactionMode: mode, timeException: lease.timeException}), {mode: 0o600});
     writeFileSync(join(temporary, "client/owned-tab.json"), JSON.stringify({endpoint: state.webSocketDebuggerUrl, targetId: "owned"}));
     writeFileSync(process.env.BROWSER_SESSION_GUARD_STATE!, `${Date.now() - 120_000}\t1`);
-    const helper = (name: string, args: string[], session = beneficiary) => Bun.spawn(["node", fileURLToPath(new URL(name, import.meta.url)), ...args], {env: {...process.env, PI_SESSION_ID: session}, stdout: "pipe", stderr: "pipe"});
+    const helper = (name: string, args: string[], session = beneficiary) => Bun.spawn(["node", "--import", fileURLToPath(new URL("fixtures/host-preload.js", import.meta.url)), fileURLToPath(new URL(name, import.meta.url)), ...args], {
+      env: {...process.env, PI_SESSION_ID: session, BROWSER_TOOLS_TEST_HOST_STATE: JSON.stringify({...state, networkMode}), BROWSER_TOOLS_TEST_HOST_REQUESTS: requests}, stdout: "pipe", stderr: "pipe",
+    });
+    const startArgs = ["--foreground", `--network=${networkMode}`, ...(mode === "direct" ? ["--direct-cdp"] : []), "--exception", output];
     try {
-      const start = helper("../browser-start.js", ["--foreground", ...(mode === "direct" ? ["--direct-cdp"] : []), "--exception", output]);
+      const start = helper("../browser-start.js", startArgs);
       const [error, code] = await Promise.all([new Response(start.stderr).text(), start.exited]);
       expect(error).toBe(""); expect(code).toBe(0);
+      expect(readFileSync(requests, "utf8")).toBe("/status\n/resume\n");
+      const attached = readFileSync(process.env.BROWSER_TOOLS_STATE!, "utf8");
+      expect(JSON.parse(attached).networkMode).toBe(networkMode);
+      const beforeLease = readFileSync(leasePath(), "utf8");
+      const mismatch = helper("../browser-start.js", startArgs.map(arg => arg === `--network=${networkMode}` ? `--network=${networkMode === "proxy" ? "direct" : "proxy"}` : arg));
+      expect(await mismatch.exited).toBe(1);
+      expect(await new Response(mismatch.stderr).text()).toContain("incompatible fixture network");
+      expect(readFileSync(process.env.BROWSER_TOOLS_STATE!, "utf8")).toBe(attached);
+      expect(readFileSync(leasePath(), "utf8")).toBe(beforeLease);
+      expect(readFileSync(requests, "utf8")).toBe("/status\n/resume\n/status\n/resume\n");
       const check = helper("../session-guard.js", ["check"]);
       expect(await check.exited).toBe(0);
       expect(await new Response(check.stdout).text()).toContain("third-party host exception");
       const wrongAgent = helper("../session-guard.js", ["check"], issuer);
       expect(await wrongAgent.exited).toBe(1);
       expect(await new Response(wrongAgent.stderr).text()).toContain("another agent session");
-      const wrongStart = helper("../browser-start.js", ["--foreground", ...(mode === "direct" ? ["--direct-cdp"] : []), "--exception", output], issuer);
+      const wrongStart = helper("../browser-start.js", startArgs, issuer);
       expect(await wrongStart.exited).toBe(1);
       for (const path of ["/foreground/json/version", "/direct/json/version", `/foreground/exception/${"a".repeat(64)}/json/version`]) expect((await fetch(`http://127.0.0.1:${state.port}${path}`)).status).toBe(403);
       expect((await fetch(`http://127.0.0.1:${state.directPort}/json/version`)).status).toBe(403);

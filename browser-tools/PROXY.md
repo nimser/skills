@@ -1,50 +1,60 @@
-# Proxy Setup — Reader Notes
+# Automation network selection
 
-The browser-tools scripts optionally route Chrome and connectivity checks through
-a proxy supplied in `AGENT_HTTPS_PROXY`. The scripts consume that variable but
-do not create it. A local environment-specific builder is intentionally kept
-outside this public skill.
+Network routing and CDP interaction permissions are independent choices.
+`--direct-cdp` permits browser-wide protocol access; it does not disable the proxy.
+The host broker owns network configuration and credentials.
 
-## How the scripts consume the proxy
+## Choose the network
 
-- `AGENT_HTTPS_PROXY` is a proxy URL and must never be printed or logged.
-- `browser-start.js` passes only the proxy host and port to Chrome.
-- `browser-nav.js` and `browser-content.js` answer proxy-auth challenges per page
-  when the URL contains credentials.
-- The proxy flag binds at Chrome launch; restart the container-local browser
-  after changing the variable.
-- Environment variables do not persist across separate agent shell calls. Set
-  `AGENT_HTTPS_PROXY` in the same call as the browser command or use
-  `browser-session-start.sh`.
+```sh
+# Passive attachment to an existing proxy browser; never launches:
+./browser-start.js
+./browser-start.js --network=proxy
 
-## The builder contract
+# With explicit approval for foreground interaction and launch:
+./browser-start.js --foreground --seconds 120
 
-`browser-session-start.sh` invokes the command named by
-`AGENT_PROXY_URL_CMD`. The command is local configuration and is not shipped by
-this skill. A compatible command:
+# Only with separate explicit approval to bypass the proxy:
+./browser-start.js --foreground --network=direct --seconds 120
+```
 
-1. Prints a complete proxy URL only when explicitly requested.
-2. Accepts the targeting options required by the local environment.
-3. Never displays credentials on stderr or in logs.
-4. Exits non-zero on missing credentials, invalid options, or other failures.
+Proxy is the default for every request, including attachment. `--network=direct`
+asserts explicit user approval for direct network access across the entire
+Automation profile, including restored tabs and extensions. It grants no CDP
+interaction or launch permission by itself. Do not select it for proxy-required
+work, because a proxy failed, or because an attachment was refused.
 
-The skill passes builder arguments through without interpreting provider-
-specific values. Common bootstrap defaults can be supplied with:
+The selected network is fixed for the browser generation. A mismatched attachment
+or foreground request fails before issuing approval, stopping, restarting or
+switching the browser. There is no automatic proxy-to-direct fallback. To change
+network, obtain approval to stop Automation, then a fresh launch approval with the
+new explicit choice. Never stop or reopen an active task merely to satisfy a
+mismatched request.
 
-- `AGENT_PROXY_COUNTRIES`
-- `AGENT_PROXY_ROTATING` (`true`/`false` or `1`/`0`)
-- `AGENT_PROXY_SESSION_ID`
-- `AGENT_PROXY_TTL`
-- `AGENT_PROXY_ENTRY`
+The broker advertises `networkSelection: generation-v1`, available networks and
+its proxy default in `/status`. Live status, returned client state and startup
+output name `networkMode`. Clients reject brokers without that capability and
+reject returned identities whose network differs from the request.
 
-Command-line flags override these environment defaults.
+Time-exception receipts do not grant network changes. Selecting one first
+passively verifies the requested network and pinned generation through the
+broker, without issuing a new grant. Proxy remains the default; add
+`--network=direct` only for an explicitly approved direct-network browser.
 
-## Safety rules
+## Host-only credentials
 
-- Never echo or log `AGENT_HTTPS_PROXY`.
-- Keep credential retrieval inside the local builder and out of argv, files, and
-  terminal output.
-- Use a stable proxy endpoint for logged-in sessions.
-- Use rotating endpoints only for stateless work.
-- If a proxy URL is exposed in persistent output, rotate its credentials through
-  the local secret-management process.
+`AGENT_HTTPS_PROXY` is rejected in host mode. It does not select the network and
+its absence does not imply direct access. Never pass a credential-bearing URL to
+the broker, browser, container environment or CDP authentication helpers. The
+host relay retrieves its upstream credentials locally; `--network=proxy` selects
+that relay without transferring credentials.
+
+Proxy routing is not an OS-level egress or anonymity boundary. Before an approved
+account login, verify the exit address from that browser against the host relay.
+A successful CLI/container check alone does not verify browser routing. Stop on
+an address mismatch, authentication prompt or proxy failure; never retry directly.
+Do not restart or rotate the upstream during a logged-in task; a sticky interval
+does not guarantee uninterrupted address stability.
+
+Host deployment and recovery: `~/.local/lib/browser-tools-host/README.md`.
+Browser interaction approvals and lifetime: [focus/README.md](focus/README.md).

@@ -54,11 +54,13 @@ test("broker denials surface their bounded FOCUS_BLOCKED reason, never arbitrary
 });
 
 test("modes and durations must be explicit; default never selects or renews elevated access", () => {
-  expect(startOptions([])).toEqual({mode: "background", seconds: 60});
-  expect(startOptions(["--host", "--resume"])).toEqual({mode: "background", seconds: 60});
+  expect(startOptions([])).toEqual({mode: "background", seconds: 900});
+  expect(startOptions(["--host", "--resume"])).toEqual({mode: "background", seconds: 900});
   expect(startOptions(["--foreground", "--seconds", "90"])).toEqual({mode: "foreground", seconds: 90});
-  expect(startOptions(["--foreground", "--direct-cdp"])).toEqual({mode: "direct", seconds: 60});
-  for (const args of [["--direct-cdp"], ["--seconds", "30"], ["--foreground", "--seconds", "0"], ["--foreground", "--seconds", "301"], ["--foreground", "--foreground"], ["--keep-cookies"], ["--unknown"]]) expect(() => startOptions(args)).toThrow();
+  expect(startOptions(["--foreground", "--direct-cdp"])).toEqual({mode: "direct", seconds: 900});
+  expect(startOptions(["--foreground", "--seconds", "900"])).toEqual({mode: "foreground", seconds: 900});
+  expect(startOptions(["--foreground", "--exception", "/private/receipt.json"])).toEqual({mode: "foreground", seconds: 900, exceptionFile: "/private/receipt.json"});
+  for (const args of [["--direct-cdp"], ["--seconds", "30"], ["--foreground", "--seconds", "0"], ["--foreground", "--seconds", "901"], ["--exception", "receipt"], ["--foreground", "--exception"], ["--foreground", "--exception", "receipt", "--seconds", "900"], ["--foreground", "--foreground"], ["--keep-cookies"], ["--unknown"]]) expect(() => startOptions(args)).toThrow();
   expect(modeEndpoint({port: 1, webSocketDebuggerUrl: "ws://127.0.0.1:1/base"}).browserWSEndpoint).toBe("ws://127.0.0.1:1/base");
   expect(modeEndpoint({port: 1, directPort: 2, webSocketDebuggerUrl: "ws://127.0.0.1:1/base", interactionMode: "direct"}).browserWSEndpoint).toBe("ws://127.0.0.1:1/base/direct");
 });

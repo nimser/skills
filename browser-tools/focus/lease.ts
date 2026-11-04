@@ -4,6 +4,7 @@ import {tmpdir} from "node:os";
 import {randomUUID} from "node:crypto";
 import {createInterface} from "node:readline/promises";
 import {actions, FOCUS_PROTOCOL, FocusDenied, parseLease, type Lease} from "./policy.ts";
+import {FOREGROUND_SECONDS} from "./limits.js";
 
 export function focusDirectory(): string {
   return process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR || join(process.env.XDG_RUNTIME_DIR || tmpdir(), `browser-tools-focus-${process.getuid?.()}`);
@@ -49,7 +50,7 @@ export function consumeLaunch(now = Date.now()): Lease {
   } finally { closeSync(fd); rmSync(lock, {force: true}); }
 }
 export function grantArguments(args: string[], browserId: string, now = Date.now()): Lease {
-  let seconds = 60, launch = false;
+  let seconds = FOREGROUND_SECONDS, launch = false;
   let targets: string[] = [], selected: Lease["actions"] = [];
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
@@ -57,9 +58,9 @@ export function grantArguments(args: string[], browserId: string, now = Date.now
     else if (arg === "--seconds") seconds = Number(args[++index]);
     else if (arg === "--target") targets.push(args[++index]!);
     else if (arg === "--actions") selected = args[++index]?.split(",") as Lease["actions"];
-    else throw new Error("Use grant [--launch] --actions ACTIONS [--target ID] [--seconds 1..300]");
+    else throw new Error(`Use grant [--launch] --actions ACTIONS [--target ID] [--seconds 1..${FOREGROUND_SECONDS}]`);
   }
-  if (!Number.isInteger(seconds) || seconds < 1 || seconds > 300 || !selected?.length || (!launch && !targets.length)) throw new Error("Specify bounded actions, duration and an owned target, or --launch");
+  if (!Number.isInteger(seconds) || seconds < 1 || seconds > FOREGROUND_SECONDS || !selected?.length || (!launch && !targets.length)) throw new Error("Specify bounded actions, duration and an owned target, or --launch");
   return parseLease({version: 1, browserId, issuedAt: now, expiresAt: now + seconds * 1000, targets, actions: selected, launch}, browserId, now);
 }
 
@@ -67,7 +68,7 @@ export function approveForeground(request: unknown): Lease {
   const value = request as {mode?: string; confirmed?: boolean; seconds?: number; targets?: string[]};
   if (!value || value.confirmed !== true || !["foreground", "direct"].includes(value.mode!)
     || Object.keys(value).some(key => !["mode", "confirmed", "seconds", "targets"].includes(key))
-    || !Number.isInteger(value.seconds) || value.seconds! < 1 || value.seconds! > 300
+    || !Number.isInteger(value.seconds) || value.seconds! < 1 || value.seconds! > FOREGROUND_SECONDS
     || !Array.isArray(value.targets)) throw new FocusDenied("explicit bounded foreground approval is required");
   let gateway;
   if (existsSync(gatewayPath())) {
@@ -86,7 +87,7 @@ if (import.meta.main) {
   try {
     const [command, ...args] = process.argv.slice(2);
     if (command === "--help") {
-      console.log(`Owner-only foreground leases. Actions: ${actions.join(",")}.\nUse grant [--launch] --actions ACTIONS [--target ID] [--seconds 1..300], status or revoke.`);
+      console.log(`Owner-only foreground leases. Actions: ${actions.join(",")}.\nUse grant [--launch] --actions ACTIONS [--target ID] [--seconds 1..${FOREGROUND_SECONDS}], status or revoke.`);
     } else if (command === "status" && !args.length) {
       const gateway = readPrivateJson(gatewayPath());
       const lease = parseLease(readLease(), gateway.browserId);

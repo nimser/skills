@@ -38,9 +38,11 @@ describe("passive default and explicit foreground/direct CDP", () => {
     for (const request of [command("DOM.getDocument"), command("Target.attachToTarget", {targetId: "foreign", flatten: true}), command("DOM.getDocument", {}, "foreign"), command("Target.getTargetInfo")]) expect(() => policy.authorize(request)).toThrow("FOCUS_BLOCKED");
   });
   test("rejects expired, future, malformed, excessive and wrong-browser leases", () => {
-    for (const value of [undefined, {}, lease({browserId: "other"}), lease({expiresAt: now}), lease({issuedAt: now + 1}), lease({expiresAt: now + 300_001}), lease({actions: ["unknown"] as any}), lease({targets: ["*"]})]) expect(() => parseLease(value, "fixture-browser", now)).toThrow("FOCUS_BLOCKED");
+    for (const value of [undefined, {}, lease({browserId: "other"}), lease({expiresAt: now}), lease({issuedAt: now + 1}), lease({expiresAt: now + 900_001}), lease({actions: ["unknown"] as any}), lease({targets: ["*"]})]) expect(() => parseLease(value, "fixture-browser", now)).toThrow("FOCUS_BLOCKED");
     expect(parseLease(lease(), "fixture-browser", now)).toEqual(lease());
-    expect(() => grantArguments(["--target", "owned", "--actions", "inspect", "--seconds", "301"], "fixture-browser", now)).toThrow();
+    expect(parseLease(lease({expiresAt: now + 900_000}), "fixture-browser", now).expiresAt).toBe(now + 900_000);
+    expect(grantArguments(["--target", "owned", "--actions", "inspect"], "fixture-browser", now).expiresAt).toBe(now + 900_000);
+    expect(() => grantArguments(["--target", "owned", "--actions", "inspect", "--seconds", "901"], "fixture-browser", now)).toThrow();
     expect(() => grantArguments(["--actions", "inspect"], "fixture-browser", now)).toThrow();
     expect(grantArguments(["--launch", "--actions", "tab-create", "--seconds", "30"], "fixture-browser", now).launch).toBe(true);
   });

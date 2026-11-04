@@ -22,30 +22,32 @@ export async function serve(command: string[], userDataDir: string): Promise<voi
   const leaseTimer = setInterval(() => gateway.checkLease(), 100);
   leaseTimer.unref();
   let ready = false, buffer = "", stopping = false, product = "Chrome/0";
-  const server = Bun.serve<{mode: InteractionMode}>({
+  const server = Bun.serve<{mode: InteractionMode; exceptionToken?: string}>({
     hostname: "127.0.0.1", port: 0,
     async fetch(request, server) {
       const url = new URL(request.url);
       if (request.headers.get("host") !== `127.0.0.1:${server.port}` || request.headers.has("origin") || request.headers.has("sec-fetch-site") || url.search) return new Response("Forbidden", {status: 403});
+      const exceptionToken = url.pathname.match(/\/exception\/([0-9a-f]{64})(?:\/json\/version)?$/)?.[1];
       for (const mode of ["background", "foreground", "direct"] as const) {
-        const version = gatewayVersion(lease.browserId, server.port!, mode, product);
-        const metadataPath = `${mode === "background" ? "" : `/${mode}`}/json/version`;
+        if (mode === "background" && exceptionToken) continue;
+        const version = gatewayVersion(lease.browserId, server.port!, mode, product, exceptionToken);
+        const metadataPath = `${mode === "background" ? "" : `/${mode}`}${exceptionToken ? `/exception/${exceptionToken}` : ""}/json/version`;
         const socketPath = new URL(version.webSocketDebuggerUrl).pathname;
         if (ready && request.method === "GET" && [metadataPath, socketPath].includes(url.pathname)) {
-          try { new FocusPolicy(lease.browserId, readLease, Date.now, mode).connectionAllowed(); }
+          try { new FocusPolicy(lease.browserId, readLease, Date.now, mode, undefined, exceptionToken).connectionAllowed(); }
           catch { return new Response("Explicit foreground/direct-CDP approval is missing or expired", {status: 403}); }
           if (url.pathname === metadataPath) return Response.json(version);
           if (!await gateway.available()) return new Response("Gateway unavailable; do not replay uncertain operations", {status: 503});
-          try { new FocusPolicy(lease.browserId, readLease, Date.now, mode).connectionAllowed(); }
+          try { new FocusPolicy(lease.browserId, readLease, Date.now, mode, undefined, exceptionToken).connectionAllowed(); }
           catch { return new Response("Approval ended while awaiting session cleanup", {status: 403}); }
-          if (server.upgrade(request, {data: {mode}})) return;
+          if (server.upgrade(request, {data: {mode, exceptionToken}})) return;
         }
       }
       return new Response("Unavailable; only guarded CDP is supported", {status: 403});
     },
     websocket: {
       maxPayloadLength: 1_000_000,
-      open(socket) { if (!gateway.connect(socket, socket.data.mode)) socket.close(1013, "Another helper is connected; do not retry writes"); },
+      open(socket) { if (!gateway.connect(socket, socket.data.mode, socket.data.exceptionToken)) socket.close(1013, "Another helper is connected; do not retry writes"); },
       message(socket, message) { gateway.receive(socket, typeof message === "string" ? message : message.toString()); },
       close(socket) { gateway.disconnect(socket); },
     },
@@ -55,10 +57,11 @@ export async function serve(command: string[], userDataDir: string): Promise<voi
     fetch(request, discovery) {
       const url = new URL(request.url);
       if (request.headers.get("host") !== `127.0.0.1:${discovery.port}` || request.headers.has("origin") || request.headers.has("sec-fetch-site") || url.search) return new Response("Forbidden", {status: 403});
-      if (!ready || request.method !== "GET" || url.pathname !== "/json/version") return new Response("Not found", {status: 404});
-      try { new FocusPolicy(lease.browserId, readLease, Date.now, "direct").connectionAllowed(); }
+      const exceptionToken = url.pathname.match(/^\/exception\/([0-9a-f]{64})\/json\/version$/)?.[1];
+      if (!ready || request.method !== "GET" || (url.pathname !== "/json/version" && !exceptionToken)) return new Response("Not found", {status: 404});
+      try { new FocusPolicy(lease.browserId, readLease, Date.now, "direct", undefined, exceptionToken).connectionAllowed(); }
       catch { return new Response("Explicit direct-CDP approval is missing or expired", {status: 403}); }
-      return Response.json(gatewayVersion(lease.browserId, server.port!, "direct", product));
+      return Response.json(gatewayVersion(lease.browserId, server.port!, "direct", product, exceptionToken));
     },
   });
   let resolveReady: () => void, rejectReady: (error: Error) => void;

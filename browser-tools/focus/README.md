@@ -60,7 +60,8 @@ actions from isolated successes or fake/headless tests.
   even if a launch lease exists. `/foreground` validates an explicit bounded
   confirmation before allowing startup. No automatic restart/reset/retry.
 
-A scoped grant names targets and actions for at most 300 seconds. Confirmed blank
+A scoped grant names targets and actions for 900 seconds by default and at most
+900 seconds without a host-issued time exception. Confirmed blank
 owned tabs join its foreground scope; popups/workers do not. Replacing approval
 never confers old foreground permissions. Passive ownership survives a grant's
 expiry until target destruction or browser exit, not browser generation changes.
@@ -89,7 +90,9 @@ The flags assert explicit user consent and the broker records the short-lived
 lease; no host-terminal prompt is needed. Agents must not select/renew elevation
 because default attachment failed or an operation needs it. A direct-CDP request
 requires both flags. The shared helper caps approval by the remaining recorded
-task budget; direct clients must also honor task-budget changes.
+task budget, which defaults to 90 minutes and cannot exceed 90 minutes without a
+host-issued exception. Shorter explicit leases/tasks remain supported; direct
+clients must also honor task-budget changes.
 
 The host runtime is `$XDG_RUNTIME_DIR/browser-tools-focus-UID`, or the same private
 subdirectory of the temporary directory without XDG runtime. Its files and
@@ -121,6 +124,62 @@ not cancel work or end the connection. Do not resume typing or declare an
 uncertain mutation absent because approval expired or cleanup completed. Inspect
 before retrying; never restore focus, close windows, renew grants or restart
 browsers automatically.
+
+## Requested time exceptions
+
+A requested exception needs a different agent session running on the host.
+`exception.ts grant` verifies host execution and reads the issuer's `PI_SESSION_ID`;
+self-grants, absent agent identities, containers and unverified host detection are
+refused. The HTTP broker never issues exceptions and rejects durations above
+900 seconds. This is a trusted-agent workflow, not authentication against
+same-UID code able to forge environment variables or edit private approval files.
+
+Set `BENEFICIARY_SESSION` to the beneficiary's Pi session UUID, `OWNED_TARGET` to
+its approved tab ID, `APPROVED_EXPIRY` to an explicit future ISO timestamp with
+timezone, and `PRIVATE_RECEIPT` to a new absolute private file path. On the host,
+from the other agent session:
+
+```sh
+bun ~/skills/browser-tools/focus/exception.ts grant \
+  --session "$BENEFICIARY_SESSION" --until "$APPROVED_EXPIRY" \
+  --target "$OWNED_TARGET" --output "$PRIVATE_RECEIPT"
+```
+
+Repeat `--target` for other explicitly approved tabs. Browser-wide access needs
+separate approval and the additional `--direct-cdp` flag. Issuance requires a
+running, verified exception-capable gateway; it never launches/restarts a browser
+or changes networks. It replaces the shared foreground grant, so existing elevated
+connections retire. The receipt is created mode 0600 without overwriting a file;
+its capability/endpoints are never printed. Transfer it privately to the
+beneficiary's runtime, not Git, reports or an unrelated client instance.
+
+With the beneficiary's original `PI_SESSION_ID`, select the receipt explicitly:
+
+```sh
+~/skills/browser-tools/browser-start.js --foreground --exception /absolute/private/receipt.json
+# For a separately approved direct-CDP exception, add --direct-cdp.
+```
+
+Do not pass `--seconds`. The exception uses its fixed expiry as both foreground
+and task deadline, even if the original task timer has expired. It does not reset
+that timer or create an automatically renewable budget. Ordinary task `start`
+refuses existing timers and budgets above 90 minutes. An explicit new task needs
+new approval, not stop/start as an extension of an existing task.
+
+The receipt binds issuer, beneficiary, browser generation, scopes and a random
+capability. Shared clients check the beneficiary on startup and every send;
+gateway discovery, sockets, dispatch and forwarding require the capability.
+Normal foreground/direct paths deny an exceptional grant; passive reads stay
+passive. Treat the receipt as a bearer secret: raw clients possessing it are
+trusted, not cryptographically bound to a Pi process. Direct Puppeteer uses the
+returned `browserWSEndpoint`; its root-only `browserURL` discovery cannot carry
+the exception path and is not returned for that mode.
+
+`bun ~/skills/browser-tools/focus/lease.ts revoke` revokes the shared grant,
+including its exception. Deleting only a transferred receipt does not revoke it.
+A new grant replaces the exception; already-issued work remains uncertain.
+Never renew exceptions automatically or grant unrelated accounts, mutations,
+authentication bypasses or network changes with a time extension.
 
 ## Fixture-only foreground regression
 

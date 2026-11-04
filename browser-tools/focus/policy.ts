@@ -1,3 +1,14 @@
+import {FOREGROUND_SECONDS, validTimeException} from "./limits.js";
+
+export interface TimeException {
+  version: 1;
+  sessionId: string;
+  issuerSessionId: string;
+  token: string;
+  issuedAt: number;
+  expiresAt: number;
+}
+
 export const FOCUS_PROTOCOL = "browser-tools-focus-v2";
 export const actions = ["inspect", "javascript", "navigate", "pointer", "keyboard", "screenshot", "tab-create", "tab-close", "activate", "direct-cdp"] as const;
 export type Action = typeof actions[number];
@@ -10,6 +21,7 @@ export interface Lease {
   targets: string[];
   actions: Action[];
   launch: boolean;
+  timeException?: TimeException;
 }
 export interface Command {
   id: number;
@@ -27,7 +39,10 @@ export function parseLease(value: unknown, browserId: string, now = Date.now()):
   const lease = value as Lease;
   if (!Number.isSafeInteger(now) || !lease || lease.version !== 1 || lease.browserId !== browserId || typeof browserId !== "string" || !idPattern.test(browserId)
     || !Number.isSafeInteger(lease.issuedAt) || !Number.isSafeInteger(lease.expiresAt)
-    || lease.issuedAt > now || lease.expiresAt <= now || lease.expiresAt - lease.issuedAt > 300_000
+    || lease.issuedAt > now || lease.expiresAt <= now
+    || (lease.timeException !== undefined
+      ? !validTimeException(lease.timeException, now) || lease.issuedAt !== lease.timeException.issuedAt || lease.expiresAt !== lease.timeException.expiresAt || lease.launch
+      : lease.expiresAt - lease.issuedAt > FOREGROUND_SECONDS * 1000)
     || lease.expiresAt <= lease.issuedAt || typeof lease.launch !== "boolean"
     || !Array.isArray(lease.targets) || lease.targets.length > 20 || !lease.targets.every(id => typeof id === "string" && idPattern.test(id))
     || !Array.isArray(lease.actions) || !lease.actions.length || !lease.actions.every(action => actions.includes(action))) {
@@ -37,7 +52,7 @@ export function parseLease(value: unknown, browserId: string, now = Date.now()):
 }
 
 export function leaseKey(lease: Lease): string {
-  return JSON.stringify([lease.browserId, lease.issuedAt, lease.expiresAt, lease.targets, lease.actions]);
+  return JSON.stringify([lease.browserId, lease.issuedAt, lease.expiresAt, lease.targets, lease.actions, lease.timeException]);
 }
 
 export const passiveMethods = new Set([
@@ -72,7 +87,7 @@ export class FocusPolicy {
   private epoch?: string;
   private connectionEpoch?: string;
   constructor(readonly browserId: string, private readonly lease: () => unknown, private readonly now = Date.now,
-    readonly mode: InteractionMode = "background", readonly ownedTargets = new Set<string>()) {}
+    readonly mode: InteractionMode = "background", readonly ownedTargets = new Set<string>(), private readonly exceptionToken?: string) {}
 
   currentLease(): Lease {
     const lease = parseLease(this.lease(), this.browserId, this.now());
@@ -84,6 +99,8 @@ export class FocusPolicy {
   connectionAllowed(): void {
     if (this.mode === "background") return;
     const lease = this.currentLease();
+    if (lease.timeException && lease.timeException.token !== this.exceptionToken) throw new FocusDenied("time exception requires its beneficiary capability");
+    if (!lease.timeException && this.exceptionToken) throw new FocusDenied("time exception was revoked or replaced");
     if (this.mode === "direct" && !lease.actions.includes("direct-cdp")) throw new FocusDenied("direct CDP requires separate browser-wide approval");
     const epoch = leaseKey(lease);
     if (this.connectionEpoch !== undefined && this.connectionEpoch !== epoch) throw new FocusDenied("foreground approval changed; explicitly reconnect without replaying work");

@@ -10,8 +10,8 @@ description: Passive owned-tab inspection by default; bounded foreground interac
 | Mode | Available operations | Approval |
 | --- | --- | --- |
 | **Background (default)** | Metadata, owned-page attachment, frame tree and structural DOM queries | No foreground lease; never launches, creates tabs, activates or runs JavaScript |
-| **Foreground** | Owned-tab navigation, evaluation, screenshots, clicks, typing and explicit activation | Explicit user request; bounded lease, at most five minutes |
-| **Direct CDP** | Ordinary CDP/Puppeteer connection, auto-attachment and broader browser protocol methods | Separate explicit request for browser-wide access; bounded lease |
+| **Foreground** | Owned-tab navigation, evaluation, screenshots, clicks, typing and explicit activation | Explicit user request; 15-minute default and ceiling without a host exception |
+| **Direct CDP** | Ordinary CDP/Puppeteer connection, auto-attachment and broader browser protocol methods | Separate explicit request for browser-wide access; same bounded duration |
 
 Use application APIs/CLI for mutations while the owner works elsewhere. Default
 inspection uses a small protocol allowlist, not arbitrary JavaScript labelled as
@@ -102,7 +102,7 @@ lease exists. Elevated paths require a valid lease at discovery, connection and
 each command. Expiry/revocation blocks further sends and forwarding; reconnects
 do not renew approval or silently downgrade an elevated connection. Direct clients
 must honor the task budget; approvals requested through the shared start helper
-are capped by its recorded remaining timer as well as the five-minute ceiling.
+are capped by its recorded remaining timer as well as the 15-minute ceiling.
 
 ## Lifetime and uncertainty
 
@@ -154,11 +154,36 @@ and optionally `BROWSER_TOOLS_STATE`. Host approvals use the canonical private
 manufacture approval. `BROWSER_CDP_*` and guard-disable variables cannot select an
 elevated mode. Explicit CLI options, not environment defaults, select elevation.
 
-Logged-in work requires a session timer (`node {baseDir}/session-guard.js start 20`
-once for the approved task). `BROWSER_GUARD_REQUIRE_SESSION=1` also requires timers
-for public work. An expired/malformed recorded timer blocks shared-client sends;
-never restart a timer to extend a task automatically. Optional Pi preflight is
-not the protocol boundary and cannot grant foreground/direct capabilities.
+Logged-in work requires a session timer (`node {baseDir}/session-guard.js start`
+once for the approved task). The default and maximum task budget is 90 minutes;
+shorter integer-minute budgets are supported. `BROWSER_GUARD_REQUIRE_SESSION=1`
+also requires timers for public work. Expired/malformed timers block shared-client
+sends; starting over an existing timer is refused. Never stop/start a timer or
+renew a lease to extend an ongoing task. Optional Pi preflight cannot grant
+foreground/direct capabilities.
+
+### Requested time exceptions
+
+Only a different agent session executing on the verified host can issue a time
+exception, through `bun {baseDir}/focus/exception.ts grant`. The beneficiary cannot
+self-grant, including from the host; containers and broker requests cannot issue
+exceptions. The issuer must supply the beneficiary's `PI_SESSION_ID`, an owned
+target, an explicit expiry with timezone and a private receipt path. Follow
+[focus/README.md](focus/README.md#requested-time-exceptions) for the host command.
+Never manufacture, edit or relocate host approval files to bypass these checks.
+
+The beneficiary explicitly selects the private receipt with
+`{baseDir}/browser-start.js --foreground --exception /absolute/private/receipt.json`.
+Add `--direct-cdp` only if the exception separately authorizes it. Do not combine
+`--exception` with `--seconds`. The receipt replaces both time limits with one
+absolute deadline, without resetting the original task timer, launching a browser
+or changing its network. It requires the running gateway's exception capability;
+legacy gateways fail closed. Other sessions cannot select the receipt through
+shared helpers, and normal CDP endpoints cannot use the exceptional lease.
+Puppeteer under an exception must use `browserWSEndpoint`, not `browserURL`.
+Revocation or replacement blocks further dispatch; never renew an exception
+automatically. Protect the receipt as a bearer capability and keep it out of Git
+and logs. Session IDs identify trusted agents, not a hostile same-UID boundary.
 
 ## Direct shared-client helpers and tests
 

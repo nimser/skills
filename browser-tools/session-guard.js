@@ -1,60 +1,30 @@
 #!/usr/bin/env node
-// Wall-clock guard for proxied browser-tools sessions (logged-in site
-// workflows). Enforces a hard time budget so a stuck/failing agent can't
-// keep hammering a logged-in site while the user is AFK — that's exactly what
-// gets an account flagged or an IP banned.
-//
-// Budget is configurable per session (minutes), default 25.
-//
-// The `check` sub-command is not typed by hand: the browser-guard pi extension
-// (~/.pi/agent/extensions/browser-guard.ts) runs it automatically before every
-// browser-*.js command and blocks the action when the budget is spent.
-//
-// Usage:
-//   node session-guard.js start [minutes]   # begin timing; call once at session start
-//   node session-guard.js check             # automatic (browser-guard); exits 1 + prints "EXPIRED" past budget
-//   node session-guard.js stop              # clean up at the end of a session (success or abort)
-//
-// State file lives in the container-local browser runtime directory.
+// Record one bounded task timer; host-issued exceptions use their absolute expiry.
 import fs from "node:fs";
-import { runtimeDir } from "./browser-config.js";
+import {runtimeDir, readState} from "./browser-config.js";
+import {checkSessionBudget} from "./focus/client.js";
+import {TASK_MINUTES} from "./focus/limits.js";
 
-const DEFAULT_BUDGET_MIN = 25;
 const stateFile = process.env.BROWSER_SESSION_GUARD_STATE || `${runtimeDir()}/session-guard.state`;
-const cmd = process.argv[2];
+const [cmd, ...args] = process.argv.slice(2);
 
-function readState() {
-  const [started, budgetMin] = fs.readFileSync(stateFile, "utf8").split("\t");
-  return { started: Number(started), budgetMs: Number(budgetMin) * 60 * 1000, budgetMin: Number(budgetMin) };
-}
-
-if (cmd === "start") {
-  const budgetMin = Number(process.argv[3]) || DEFAULT_BUDGET_MIN;
-  fs.mkdirSync(runtimeDir(), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(stateFile, `${Date.now()}\t${budgetMin}`);
-  console.log(`Session timer started. Hard budget: ${budgetMin} minutes. browser-guard checks it before every browser-tools action.`);
-} else if (cmd === "check") {
-  if (!fs.existsSync(stateFile)) {
-    console.error(`No active session (run "start" first). Refusing to proceed without a timer.`);
-    process.exit(1);
-  }
-  const { started, budgetMs, budgetMin } = readState();
-  const elapsed = Date.now() - started;
-  const remaining = budgetMs - elapsed;
-  if (remaining <= 0) {
-    console.error(
-      `EXPIRED — session has run ${(elapsed / 60000).toFixed(1)} min, budget is ${budgetMin} min.\n` +
-      `STOP all browser-tools actions now. Do not retry. Report status to the user: what was ` +
-      `completed vs. still pending, and why the session ran long (stuck selector, unexpected page, etc.). ` +
-      `A fresh session needs fresh explicit approval (and a fresh proxy check).`
-    );
-    process.exit(1);
-  }
-  console.log(`OK — ${(remaining / 1000).toFixed(0)}s remaining in this ${budgetMin}-minute session.`);
-} else if (cmd === "stop") {
-  if (fs.existsSync(stateFile)) fs.unlinkSync(stateFile);
-  console.log("Session timer cleared.");
-} else {
-  console.error("Usage: node session-guard.js start [minutes] | check | stop");
-  process.exit(1);
+try {
+  if (cmd === "start" && args.length <= 1) {
+    const minutes = args.length ? Number(args[0]) : TASK_MINUTES;
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > TASK_MINUTES) throw new Error(`Task budget must be 1..${TASK_MINUTES} minutes; extensions require a third-party host agent`);
+    fs.mkdirSync(runtimeDir(), {recursive: true, mode: 0o700});
+    fs.writeFileSync(stateFile, `${Date.now()}\t${minutes}`, {flag: "wx", mode: 0o600});
+    console.log(`Session timer started. Hard budget: ${minutes} minutes.`);
+  } else if (cmd === "check" && !args.length) {
+    const timeException = readState()?.timeException;
+    if (!timeException && !fs.existsSync(stateFile)) throw new Error('No active session; run "start" once for an approved task');
+    const remaining = checkSessionBudget(runtimeDir(), timeException);
+    console.log(`OK — ${Math.floor(remaining / 1000)}s remaining${timeException ? " under a third-party host exception" : " in this task"}.`);
+  } else if (cmd === "stop" && !args.length) {
+    fs.rmSync(stateFile, {force: true});
+    console.log("Session timer cleared; an existing host exception must be revoked separately.");
+  } else throw new Error("Usage: node session-guard.js start [minutes] | check | stop");
+} catch (error) {
+  console.error(error.code === "EEXIST" ? "A task timer is already recorded; never restart it to extend a task. Request a third-party host exception." : error.message);
+  process.exitCode = 1;
 }

@@ -1,19 +1,22 @@
 import fs from "node:fs";
 import {modeEndpoint} from "./mode.js";
+import {exceptionRemaining, TASK_MINUTES, TIME_EXCEPTIONS} from "./limits.js";
 
 export const FOCUS_PROTOCOL = "browser-tools-focus-v2";
 const blocked = reason => new Error(`FOCUS_BLOCKED: ${reason}. Use passive inspection/API/CLI or explicitly request foreground/direct CDP; never upgrade automatically.`);
 
-export function checkSessionBudget(runtime) {
+export function checkSessionBudget(runtime, timeException) {
+  if (timeException !== undefined) return exceptionRemaining(timeException);
   const file = process.env.BROWSER_SESSION_GUARD_STATE || `${runtime}/session-guard.state`;
   let text;
   try { text = fs.readFileSync(file, "utf8"); } catch (error) {
     if (error.code === "ENOENT" && process.env.BROWSER_GUARD_REQUIRE_SESSION !== "1") return Infinity;
     throw blocked("session timer is unavailable");
   }
-  const [start, minutes] = text.split("\t").map(Number);
+  const fields = text.trim().split("\t");
+  const [start, minutes] = fields.map(Number);
   const remaining = start + minutes * 60_000 - Date.now();
-  if (!Number.isFinite(start) || !Number.isFinite(minutes) || minutes <= 0 || start > Date.now() || remaining <= 0) throw blocked("session timer is invalid or EXPIRED");
+  if (fields.length !== 2 || !Number.isSafeInteger(start) || !Number.isInteger(minutes) || minutes <= 0 || minutes > TASK_MINUTES || start > Date.now() || remaining <= 0) throw blocked("session timer is invalid or EXPIRED");
   return remaining;
 }
 
@@ -23,13 +26,13 @@ export async function connectGuardedBrowser(state, runtime, timeoutMs = 5000) {
     || state.webSocketDebuggerUrl !== `ws://127.0.0.1:${state.port}/devtools/browser/${state.browserId}`) {
     throw blocked("legacy or unsupported browser endpoint; deploy the private-pipe focus gateway");
   }
-  checkSessionBudget(runtime);
+  checkSessionBudget(runtime, state.timeException);
   const endpoint = modeEndpoint(state);
   const elevated = endpoint.mode === "background" ? "" : `; ${endpoint.mode} approval may have expired, so run browser-start.js to return to passive inspection`;
   try {
-    const response = await fetch(`${endpoint.browserURL}/json/version`, {signal: AbortSignal.timeout(timeoutMs)});
+    const response = await fetch(endpoint.metadataURL || `${endpoint.browserURL}/json/version`, {signal: AbortSignal.timeout(timeoutMs)});
     const identity = await response.json();
-    if (!response.ok || identity.focusProtocol !== FOCUS_PROTOCOL || identity.browserId !== state.browserId || identity.interactionMode !== endpoint.mode || identity.webSocketDebuggerUrl !== endpoint.browserWSEndpoint) throw new Error();
+    if ((state.timeException && identity.timeExceptions !== TIME_EXCEPTIONS) || !response.ok || identity.focusProtocol !== FOCUS_PROTOCOL || identity.browserId !== state.browserId || identity.interactionMode !== endpoint.mode || identity.webSocketDebuggerUrl !== endpoint.browserWSEndpoint) throw new Error();
   } catch { throw blocked(`gateway identity is unavailable or unverified; no protocol connection was opened${elevated}`); }
   const socket = new WebSocket(endpoint.browserWSEndpoint);
   let nextId = 0;
@@ -61,7 +64,7 @@ export async function connectGuardedBrowser(state, runtime, timeoutMs = 5000) {
   });
   async function send(method, params = {}, sessionId, deadline = Infinity) {
     const started = performance.now();
-    const expiresAt = Math.min(started + checkSessionBudget(runtime), Number.isFinite(deadline) ? deadline : started + 30_000);
+    const expiresAt = Math.min(started + checkSessionBudget(runtime, state.timeException), Number.isFinite(deadline) ? deadline : started + 30_000);
     const remaining = expiresAt - performance.now();
     if (remaining <= 0) throw blocked(`${method} timed out; its outcome is uncertain`);
     if (socket.readyState !== WebSocket.OPEN) throw blocked("gateway disconnected");
@@ -116,7 +119,7 @@ export async function connectGuardedBrowser(state, runtime, timeoutMs = 5000) {
           const result = await cdp.send(method, params, deadline);
           if (result.errorText) throw new Error("Navigation failed; do not retry automatically");
           if (method === "Page.reload" || result.loaderId) {
-            const remaining = Math.min(checkSessionBudget(runtime), deadline - performance.now());
+            const remaining = Math.min(checkSessionBudget(runtime, state.timeException), deadline - performance.now());
             if (remaining <= 0) throw blocked(`${method} DOM load timed out; its outcome is uncertain`);
             await Promise.race([loaded, new Promise((_, reject) => { timer = setTimeout(() => reject(blocked(`${method} DOM load timed out; its outcome is uncertain`)), remaining); })]);
           }

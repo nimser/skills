@@ -1,4 +1,5 @@
 import {FocusDenied, FocusPolicy, FOCUS_PROTOCOL, leaseKey, type Command, type InteractionMode} from "./policy.ts";
+import {TIME_EXCEPTIONS} from "./limits.js";
 
 interface Peer { send(value: string): unknown; close(code?: number, reason?: string): unknown }
 interface Connection {
@@ -40,9 +41,9 @@ export class FocusGateway {
     if (this.connection?.state === "closing") await this.connection.settled;
     return !this.broken && !this.connection;
   }
-  connect(peer: Peer, mode: InteractionMode = "background"): boolean {
+  connect(peer: Peer, mode: InteractionMode = "background", exceptionToken?: string): boolean {
     if (this.broken || this.connection) return false;
-    const policy = new FocusPolicy(this.browserId, this.lease, this.now, mode, this.owned);
+    const policy = new FocusPolicy(this.browserId, this.lease, this.now, mode, this.owned, exceptionToken);
     try {
       policy.connectionAllowed();
       if (mode !== "background") {
@@ -214,7 +215,7 @@ export class FocusGateway {
     }
   }
 }
-export function gatewayVersion(browserId: string, port: number, mode: InteractionMode = "background", product = "Chrome/0") {
-  return {Browser: product, "Protocol-Version": "1.3", focusProtocol: FOCUS_PROTOCOL, interactionMode: mode,
-    browserId, webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/${browserId}${mode === "background" ? "" : `/${mode}`}`};
+export function gatewayVersion(browserId: string, port: number, mode: InteractionMode = "background", product = "Chrome/0", exceptionToken?: string) {
+  return {Browser: product, "Protocol-Version": "1.3", focusProtocol: FOCUS_PROTOCOL, interactionMode: mode, timeExceptions: TIME_EXCEPTIONS,
+    browserId, webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/${browserId}${mode === "background" ? "" : `/${mode}`}${exceptionToken ? `/exception/${exceptionToken}` : ""}`};
 }

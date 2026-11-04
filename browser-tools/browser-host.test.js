@@ -87,6 +87,23 @@ test("host ownership and focus preflight without a real browser", async t => {
         assert.deepEqual(readState(), state);
       } finally { rmSync(timer); }
     });
+    await t.test("invalid or shared exception receipts fail before broker fallback", () => {
+      writeState(state);
+      const receipt = join(directory, "receipt.json");
+      for (const text of ["null", "false", "{}", "{invalid"]) {
+        writeFileSync(receipt, text, {mode: 0o600});
+        const result = script("browser-start.js", ["--foreground", "--exception", receipt]);
+        assert.equal(result.status, 1);
+        assert.match(result.stderr, /FOCUS_BLOCKED: (receipt mode|invalid time-exception receipt JSON)/);
+        assert.deepEqual(readState(), state);
+      }
+      rmSync(receipt);
+      writeFileSync(receipt, "{}", {mode: 0o644});
+      const shared = script("browser-start.js", ["--foreground", "--exception", receipt]);
+      assert.equal(shared.status, 1);
+      assert.match(shared.stderr, /unsafe time-exception receipt/);
+      rmSync(receipt);
+    });
     await t.test("rejects proxy configuration without replacing recorded identity", () => {
       writeState(state);
       const result = script("browser-start.js", ["--host", "--resume"], {AGENT_HTTPS_PROXY: "http://127.0.0.1:1"});

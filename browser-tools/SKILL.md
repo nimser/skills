@@ -189,9 +189,23 @@ foreground/direct capabilities.
 Only a different agent session executing on the verified host can issue a time
 exception, through `bun {baseDir}/focus/exception.ts grant`. The beneficiary cannot
 self-grant, including from the host; containers and broker requests cannot issue
-exceptions. The issuer must supply the beneficiary's `PI_SESSION_ID`, an owned
-target, an explicit expiry with timezone and a private receipt path. Follow
-[focus/README.md](focus/README.md#requested-time-exceptions) for the host command.
+exceptions. The issuer must supply the beneficiary's `PI_SESSION_ID` (the Pi
+session UUID, not a devpod ID), an owned target, a duration such as `--duration 8h`
+or an explicit expiry with timezone via `--until`, and a private receipt path.
+Durations are positive integers with unit `s`, `m`, `h` or `d`; choose exactly one
+time option. For an approved eight-hour unattended proxy session, the host agent
+runs:
+
+```sh
+bun {baseDir}/focus/exception.ts grant \
+  --session BENEFICIARY_PI_SESSION_UUID --duration 8h \
+  --target OWNED_TARGET_ID --output /absolute/private/receipt.json
+```
+
+Add `--direct-cdp` only for separately approved browser-wide access; it leaves
+proxy routing unchanged. The fixed deadline starts at issuance, not attachment.
+Follow [focus/README.md](focus/README.md#requested-time-exceptions) for private
+receipt transfer and revocation.
 Never manufacture, edit or relocate host approval files to bypass these checks.
 
 The beneficiary explicitly selects the private receipt with

@@ -149,15 +149,23 @@ refused. The HTTP broker never issues exceptions and rejects durations above
 same-UID code able to forge environment variables or edit private approval files.
 
 Set `BENEFICIARY_SESSION` to the beneficiary's Pi session UUID, `OWNED_TARGET` to
-its approved tab ID, `APPROVED_EXPIRY` to an explicit future ISO timestamp with
-timezone, and `PRIVATE_RECEIPT` to a new absolute private file path. On the host,
-from the other agent session:
+its approved tab ID, and `PRIVATE_RECEIPT` to a new absolute private file path.
+For eight hours of approved unattended work, on the host from the other agent
+session:
 
 ```sh
 bun ~/skills/browser-tools/focus/exception.ts grant \
-  --session "$BENEFICIARY_SESSION" --until "$APPROVED_EXPIRY" \
+  --session "$BENEFICIARY_SESSION" --duration 8h \
   --target "$OWNED_TARGET" --output "$PRIVATE_RECEIPT"
 ```
+
+`--duration` accepts a positive integer followed by `s`, `m`, `h` or `d`, such as
+`30m`, `8h` or `1d`. It fixes the absolute expiry once at issuance, not when the
+beneficiary attaches or reconnects. There is no 15-minute/90-minute ceiling for
+this host-issued exception. Alternatively, use `--until "$APPROVED_EXPIRY"` with
+an explicit future ISO timestamp including timezone. Supply exactly one of
+`--duration` and `--until`; missing, repeated, malformed or overflowing values
+are refused. No renewal is implicit.
 
 Repeat `--target` for other explicitly approved tabs. Browser-wide access needs
 separate approval and the additional `--direct-cdp` flag. Issuance requires a

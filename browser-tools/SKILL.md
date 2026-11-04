@@ -38,6 +38,16 @@ The network is fixed at launch. Mismatched requests fail before granting approva
 or touching the running browser; never restart, switch or fall back to direct
 access automatically. Startup output and client state report `networkMode`.
 
+For an explicitly approved pre-login proxy rotation, run
+`{baseDir}/browser-rotate.js --confirm-idle` from the pinned client instance.
+The flag asserts approval to stop every Automation tab/task. It stops only the
+proxy browser/relay and preserves cookies and timers; no relaunch or grant is
+implicit. A separately approved foreground start selects the next sticky port.
+Verify changed browser/relay exits before login; a different port does not
+prove a different IP. Old generation-bound time exceptions cannot be reused.
+See [PROXY.md](PROXY.md#explicit-pre-login-rotation); never rotate to bypass a
+site restriction or while logged-in work is running.
+
 ## Default workflow
 
 ```sh

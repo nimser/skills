@@ -38,6 +38,29 @@ export async function requestHostResume(request = fetch, approval = {mode: "back
 }
 
 /** @param {(url: string, options: RequestInit) => Promise<Response>} [request] */
+export async function requestProxyRotation(state, confirmedIdle, request = fetch) {
+  if (confirmedIdle !== true || state?.mode !== "host" || state.focusProtocol !== FOCUS_PROTOCOL
+    || state.networkMode !== "proxy" || typeof state.browserId !== "string" || !/^[A-Za-z0-9-]{1,100}$/.test(state.browserId)) {
+    throw new Error("FOCUS_BLOCKED: rotation requires a pinned proxy browser and explicit approval to stop all Automation tasks before login");
+  }
+  const options = {method: "POST", headers: {"x-browser-tools": "host-v1"}, signal: AbortSignal.timeout(30_000)};
+  const status = await request("http://127.0.0.1:19222/status", options);
+  if (!status.ok) throw new Error(await brokerReason(status) ?? "FOCUS_BLOCKED: proxy rotation preflight failed; nothing was stopped");
+  let capability;
+  try { capability = await status.json(); } catch { throw new Error("FOCUS_BLOCKED: invalid proxy rotation status; nothing was stopped"); }
+  if (capability?.focusProtocol !== FOCUS_PROTOCOL || capability.proxyRotation !== "stop-before-relaunch-v1" || capability.networkMode !== "proxy") {
+    throw new Error("FOCUS_BLOCKED: host has no compatible running proxy rotation capability; nothing was stopped");
+  }
+  const response = await request("http://127.0.0.1:19222/rotate-proxy", {...options,
+    headers: {...options.headers, "content-type": "application/json"},
+    body: JSON.stringify({expectedBrowserId: state.browserId, confirmedIdle: true})});
+  if (!response.ok) throw new Error(await brokerReason(response) ?? "FOCUS_BLOCKED: proxy shutdown failed; inspect before relaunch");
+  const result = await response.json();
+  if (result?.stopped !== true || result.networkMode !== "proxy") throw new Error("FOCUS_BLOCKED: unverified proxy shutdown; inspect before relaunch");
+  return result;
+}
+
+/** @param {(url: string, options: RequestInit) => Promise<Response>} [request] */
 export async function resumeException(receipt, networkMode, request = fetch) {
   const state = await requestHostResume(request, {mode: "background", seconds: 60, targets: [], networkMode});
   if (receipt.mode !== state.mode || receipt.focusProtocol !== state.focusProtocol || receipt.browserId !== state.browserId

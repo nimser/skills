@@ -186,6 +186,17 @@ foreground/direct capabilities.
 
 ### Requested time exceptions
 
+An explicit user request to give a named session a duration also approves the
+necessary bounded foreground preparation of that session's Automation instance;
+the host agent performs it without a second confirmation. Verify the instance
+and generation, detach stale client state with `browser-stop.js`, then use
+`browser-start.js --foreground --network=proxy --seconds 120` if attachment or a
+new owned tab is needed. Warn that focus can change before preparation. Preserve
+existing task timers; an expired timer is a blocker, not permission to reset it.
+Do not stop a running browser, rotate its proxy, switch networks or adopt foreign
+tabs implicitly. Preparation and issuance are separate operations; this approval
+does not authorize automatic renewal or beneficiary self-grants.
+
 Only a different agent session executing on the verified host can issue a time
 exception, through `bun {baseDir}/focus/exception.ts grant`. The beneficiary cannot
 self-grant, including from the host; containers and broker requests cannot issue

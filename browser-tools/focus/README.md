@@ -148,6 +148,20 @@ refused. The HTTP broker never issues exceptions and rejects durations above
 900 seconds. This is a trusted-agent workflow, not authentication against
 same-UID code able to forge environment variables or edit private approval files.
 
+A user's explicit request for a duration includes the bounded foreground
+preparation needed to issue a usable receipt for the named session; no second
+confirmation is required. The host agent verifies the beneficiary's client
+instance and current generation, warns about possible focus changes, detaches
+stale client state with `browser-stop.js`, and requests a 120-second foreground
+window through `browser-start.js` when needed. This can launch a stopped proxy
+browser and create a new owned blank tab. Verify the resulting pin and live
+gateway before granting the requested duration. Use the existing beneficiary
+instance without forging its `PI_SESSION_ID`, resetting task timers or relocating
+host approval state. An expired timer, denied preparation or unavailable gateway
+is a blocker; never retry an uncertain operation automatically. No shutdown,
+proxy rotation, network switch, foreign-tab adoption or browser-wide CDP access
+is implicit. The exception command itself still never launches a browser.
+
 Set `BENEFICIARY_SESSION` to the beneficiary's Pi session UUID, `OWNED_TARGET` to
 its approved tab ID, and `PRIVATE_RECEIPT` to a new absolute private file path.
 For eight hours of approved unattended work, on the host from the other agent

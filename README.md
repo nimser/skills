@@ -19,6 +19,9 @@ Web & Browser
 └── youtube-transcript              # YouTube transcript fetcher
 
 
+Media
+└── brief-visuals                   # cover images via CPA Images API, in parallel
+
 Data
 └── teable                          # Teable bases: typed fields, kanban views, records
 

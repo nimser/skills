@@ -116,7 +116,7 @@ a JSON array of `{path, sha256, assertion}`. Inspect the file first. Declare
 `no-private-key` only when it holds no private key data; otherwise tell the user
 what it contains and declare `user-approved` only after they explicitly accept the
 commit. Declarations are recorded in the commit message. `.env` files and `id_*`
-SSH keys stay refused.
+SSH keys stay refused; `.env*.example` templates are allowed.
 
 ## Reading the result
 

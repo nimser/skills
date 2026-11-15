@@ -129,7 +129,9 @@ SSH keys stay refused; `.env*.example` templates are allowed.
 
 Outside the documented session override, never run `git add`, `git commit` or
 `git push` yourself for this task. Never force-push, disable signing or hooks,
-or work around a policy refusal. The override must verify restoration before
+or work around a policy refusal. Never pass `--replace-expected`: only
+`publish-github-workshop --mode replace` uses that leased replacement of a fresh
+branch, after its own target checks. The override must verify restoration before
 pushing; partial completion is not permission to publish.
 
 A non-ignored nested repository with its own pending work is refused by design:

@@ -24,6 +24,14 @@ to preview without staging. Human output includes phase progress, full messages
 and errors. With `--json`, stdout is machine-readable and the human report goes
 to stderr; do not hide that report from the user.
 
+### History rework
+
+To regroup over-split commits of your own, preview with `--rework BASE
+--groups-file PATH --dry-run` (tool: `reworkBase`, `groupsFile`, `dryRun`). Show
+the user the replaced commits, planned messages and any force push, then
+execute with `--rework BASE --rework-receipt ID` (tool: `reworkReceipt`) only after
+explicit approval. See [the advanced workflow](../_scripts/commit/ADVANCED.md).
+
 ### Special-case session override
 
 The session LLM may take ownership of bundling and preparation before any

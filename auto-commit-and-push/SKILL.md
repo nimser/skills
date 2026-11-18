@@ -24,6 +24,14 @@ to preview without staging. Human output includes phase progress, full messages
 and errors. With `--json`, stdout is machine-readable and the human report goes
 to stderr; do not hide that report from the user.
 
+### Commit date
+
+Only when the user explicitly asks for a given commit time, pass `--date
+2026-11-17T22:30:00+01:00` (tool: `date`): ISO 8601 with seconds and an explicit
+offset. It sets both author and committer dates, adds one second per following
+commit of the plan, and is refused before the parent commit date. Never choose a
+date yourself. `--push-only` and `--rework` do not accept it.
+
 ### History rework
 
 To regroup over-split commits of your own, preview with `--rework BASE

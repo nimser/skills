@@ -29,6 +29,7 @@ Data
 └── orcaslicer                      # profiles as code, setting interactions and troubleshooting
 
 Utilities
+├── markdown-preview                # GitHub-like local Markdown preview, Mermaid checks
 └── vscode                          # VS Code diffs & file comparison
 ```
 

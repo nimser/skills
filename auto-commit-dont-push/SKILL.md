@@ -32,6 +32,14 @@ offset. It sets both author and committer dates, adds one second per following
 commit of the plan, and is refused before the parent commit date. Never choose a
 date yourself.
 
+### Merges
+
+To join branches, run `git merge --no-commit --no-ff BRANCH`, resolve any
+conflicts by editing the working files, then run the driver. It commits every
+merged path as one merge commit, excludes other pending work, and also records
+ancestry-only merges whose trees already match. See
+[the driver README](../_scripts/commit/README.md#merges).
+
 ### Special-case session override
 
 The session LLM may take ownership of bundling and preparation before any

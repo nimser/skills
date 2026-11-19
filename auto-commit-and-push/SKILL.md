@@ -32,6 +32,15 @@ offset. It sets both author and committer dates, adds one second per following
 commit of the plan, and is refused before the parent commit date. Never choose a
 date yourself. `--push-only` and `--rework` do not accept it.
 
+### Merges
+
+To join branches, run `git merge --no-commit --no-ff BRANCH`, resolve any
+conflicts by editing the working files, then run the driver. It commits every
+merged path as one merge commit, excludes other pending work, and also records
+ancestry-only merges whose trees already match, so diverged branch chains are
+repaired by ordinary pushes, never a force push. See
+[the driver README](../_scripts/commit/README.md#merges).
+
 ### History rework
 
 To regroup over-split commits of your own, preview with `--rework BASE

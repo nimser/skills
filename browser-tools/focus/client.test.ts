@@ -1,21 +1,17 @@
 import {expect, test} from "bun:test";
-import {mkdtempSync, rmSync, writeFileSync} from "node:fs";
-import {tmpdir} from "node:os";
-import {join} from "node:path";
 import {connectGuardedBrowser, FOCUS_PROTOCOL} from "./client.js";
 
 type Reply = (result?: any, loaded?: boolean) => void;
 type Intercept = (command: any, reply: Reply, socket: {send(message: string): unknown}) => boolean;
-async function fixture(run: (context: {page: any; requests: any[]; intercept(hook: Intercept): void; later(action: () => void, ms: number): void; timerPath: string}) => Promise<void>): Promise<void> {
-  const runtime = mkdtempSync(join(tmpdir(), "focus-client-deadline-")), timerPath = join(runtime, "timer");
-  const previous = process.env.BROWSER_SESSION_GUARD_STATE;
-  process.env.BROWSER_SESSION_GUARD_STATE = timerPath;
-  writeFileSync(timerPath, `${Date.now()}\t1`);
+async function fixture(run: (context: {page: any; requests: any[]; intercept(hook: Intercept): void; later(action: () => void, ms: number): void; setExpiry(time: number): void}) => Promise<void>): Promise<void> {
+  const window = {sessionId: "00000000-0000-0000-0000-000000000003", token: "a".repeat(64), expiresAt: Date.now() + 60_000};
+  const previous = process.env.PI_SESSION_ID;
+  process.env.PI_SESSION_ID = window.sessionId;
   const requests: any[] = [], timers = new Set<ReturnType<typeof setTimeout>>();
   let hook: Intercept = () => false;
   const server = Bun.serve({hostname: "127.0.0.1", port: 0,
     fetch(request, server) {
-      if (new URL(request.url).pathname.endsWith("/json/version")) return Response.json({focusProtocol: FOCUS_PROTOCOL, browserId: "fixture", interactionMode: "foreground", webSocketDebuggerUrl: `ws://127.0.0.1:${server.port}/devtools/browser/fixture/foreground`});
+      if (new URL(request.url).pathname.endsWith("/json/version")) return Response.json({focusProtocol: FOCUS_PROTOCOL, browserId: "fixture", interactionMode: "foreground", windowConfirmation: "desktop-v1", webSocketDebuggerUrl: `ws://127.0.0.1:${server.port}/devtools/browser/fixture/foreground/window/${window.token}`});
       if (server.upgrade(request)) return;
       return new Response("Not found", {status: 404});
     },
@@ -35,10 +31,10 @@ async function fixture(run: (context: {page: any; requests: any[]; intercept(hoo
   let browser: Awaited<ReturnType<typeof connectGuardedBrowser>> | undefined;
   try {
     browser = await connectGuardedBrowser({mode: "host", focusProtocol: FOCUS_PROTOCOL, browserId: "fixture", port: server.port,
-      webSocketDebuggerUrl: `ws://127.0.0.1:${server.port}/devtools/browser/fixture`, interactionMode: "foreground"}, runtime);
+      webSocketDebuggerUrl: `ws://127.0.0.1:${server.port}/devtools/browser/fixture`, interactionMode: "foreground", window});
     const page = await browser.page("owned");
     requests.length = 0;
-    await run({page, requests, timerPath, intercept(value) { hook = value; }, later(action, ms) {
+    await run({page, requests, setExpiry(time) { window.expiresAt = time; }, intercept(value) { hook = value; }, later(action, ms) {
       const timer = setTimeout(() => { timers.delete(timer); action(); }, ms);
       timers.add(timer);
     }});
@@ -46,9 +42,8 @@ async function fixture(run: (context: {page: any; requests: any[]; intercept(hoo
     for (const timer of timers) clearTimeout(timer);
     await browser?.disconnect();
     server.stop(true);
-    rmSync(runtime, {recursive: true, force: true});
-    if (previous === undefined) delete process.env.BROWSER_SESSION_GUARD_STATE;
-    else process.env.BROWSER_SESSION_GUARD_STATE = previous;
+    if (previous === undefined) delete process.env.PI_SESSION_ID;
+    else process.env.PI_SESSION_ID = previous;
   }
 }
 
@@ -96,9 +91,9 @@ test("DOMContentLoaded arriving before the navigation response is retained", asy
   });
 });
 
-test("a recorded session budget bounds an in-flight navigation request", async () => {
-  await fixture(async ({page, intercept, timerPath}) => {
-    writeFileSync(timerPath, `${Date.now() - 59_900}\t1`);
+test("the fixed browser window bounds an in-flight navigation request", async () => {
+  await fixture(async ({page, intercept, setExpiry}) => {
+    setExpiry(Date.now() + 100);
     intercept(command => command.method === "Page.navigate");
     const started = performance.now();
     await expect(page.goto("http://127.0.0.1/fixture", {timeout: 1000})).rejects.toThrow("Page.navigate timed out");

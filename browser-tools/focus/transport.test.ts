@@ -4,18 +4,19 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {actions, type Lease} from "./policy.ts";
-import {approveForeground, consumeLaunch, gatewayPath, leasePath, readPrivateJson, writePrivateJson} from "./lease.ts";
+import {consumeLaunch, gatewayPath, leasePath, parseWindowRequest, readPrivateJson, windowLease, writePrivateJson} from "./lease.ts";
 import {connectBrowser, newOwnedPage, ownedPage, writeState} from "../browser-config.js";
-import {exceptionGrant} from "./exception.ts";
 
 const temporary = mkdtempSync(join(tmpdir(), "browser-focus-transport-"));
-const keys = ["BROWSER_TOOLS_FOCUS_RUNTIME_DIR", "BROWSER_TOOLS_RUNTIME_DIR", "BROWSER_TOOLS_STATE", "BROWSER_SESSION_GUARD_STATE"];
+const keys = ["BROWSER_TOOLS_FOCUS_RUNTIME_DIR", "BROWSER_TOOLS_RUNTIME_DIR", "BROWSER_TOOLS_STATE", "PI_SESSION_ID"];
 const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
 process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR = join(temporary, "focus");
 process.env.BROWSER_TOOLS_RUNTIME_DIR = join(temporary, "client");
 process.env.BROWSER_TOOLS_STATE = join(temporary, "client/state.json");
-process.env.BROWSER_SESSION_GUARD_STATE = join(temporary, "timer");
-const grant = (extra: Partial<Lease> = {}): Lease => ({version: 1, browserId: "fixture-browser", issuedAt: Date.now() - 1, expiresAt: Date.now() + 60_000, launch: false, targets: ["owned"], actions: [...actions], ...extra});
+const beneficiary = "00000000-0000-0000-0000-000000000002";
+process.env.PI_SESSION_ID = beneficiary;
+const fixtureWindow = {sessionId: beneficiary, token: "b".repeat(64)};
+const grant = (extra: Partial<Lease> = {}): Lease => ({version: 1, browserId: "fixture-browser", issuedAt: Date.now() - 1, expiresAt: Date.now() + 60_000, launch: false, targets: ["owned"], actions: [...actions], window: fixtureWindow, ...extra});
 let child: ReturnType<typeof Bun.spawn>;
 let state: any;
 
@@ -25,7 +26,7 @@ beforeAll(async () => {
   const deadline = Date.now() + 5000;
   while (!existsSync(gatewayPath()) && Date.now() < deadline && child.exitCode === null) await Bun.sleep(10);
   if (!existsSync(gatewayPath())) throw new Error("Fake private-pipe gateway did not start");
-  state = {...readPrivateJson(gatewayPath()), interactionMode: "foreground"};
+  state = {...readPrivateJson(gatewayPath()), interactionMode: "foreground", window: {...fixtureWindow, expiresAt: Date.now() + 60_000}};
   writeState(state);
 });
 
@@ -82,13 +83,18 @@ describe("guarded client and private-pipe integration without a desktop", () => 
     }
   });
 
-  test("launch tickets are single-use and the manual grant command requires an owner terminal", async () => {
+  test("launch tickets are single-use and no manual grant command is exposed", async () => {
     expect(() => consumeLaunch()).toThrow("launch lease");
     const before = readFileSync(leasePath(), "utf8");
     const issuer = Bun.spawn([process.execPath, fileURLToPath(new URL("lease.ts", import.meta.url)), "grant", "--launch", "--actions", "tab-create"], {env: process.env, stdin: "ignore", stdout: "pipe", stderr: "pipe"});
     expect(await issuer.exited).toBe(1);
-    expect(await new Response(issuer.stderr).text()).toContain("interactive terminal");
+    expect(await new Response(issuer.stderr).text()).toContain("Use --help");
     expect(readFileSync(leasePath(), "utf8")).toBe(before);
+    try {
+      writePrivateJson(leasePath(), grant({launch: true, window: undefined}));
+      expect(() => consumeLaunch()).toThrow("desktop-confirmed");
+      expect((await fetch(`http://127.0.0.1:${state.port}/foreground/json/version`)).status).toBe(403);
+    } finally { writePrivateJson(leasePath(), JSON.parse(before)); }
   });
 
   test("retains owned-target isolation across helper reconnects without auto-attachment", async () => {
@@ -134,18 +140,6 @@ describe("guarded client and private-pipe integration without a desktop", () => 
     socket.close();
   });
 
-  test("checks the timer before each send, including a direct CDP session", async () => {
-    writePrivateJson(leasePath(), grant());
-    await Bun.sleep(10);
-    const browser = await connectBrowser();
-    const page = await browser.page("owned");
-    writeFileSync(process.env.BROWSER_SESSION_GUARD_STATE!, `${Date.now() - 120_000}\t1`);
-    await expect(page.mouse.click(1, 1)).rejects.toThrow("EXPIRED");
-    await expect(page.evaluate("fixture")).rejects.toThrow("EXPIRED");
-    await browser.disconnect();
-    rmSync(process.env.BROWSER_SESSION_GUARD_STATE!);
-  });
-
   test("Node CLI helpers use the same guarded transport", async () => {
     writePrivateJson(leasePath(), grant());
     const browser = await connectBrowser();
@@ -184,7 +178,7 @@ describe("guarded client and private-pipe integration without a desktop", () => 
   test("explicit direct endpoint works with ordinary Puppeteer attachment, then expires", async () => {
     const {default: puppeteer} = await import("puppeteer-core");
     writePrivateJson(leasePath(), grant({actions: ["direct-cdp"]}));
-    const browser = await puppeteer.connect({browserWSEndpoint: `${state.webSocketDebuggerUrl}/direct`, defaultViewport: null, protocolTimeout: 3000});
+    const browser = await puppeteer.connect({browserWSEndpoint: `${state.webSocketDebuggerUrl}/direct/window/${fixtureWindow.token}`, defaultViewport: null, protocolTimeout: 3000});
     try {
       expect(await browser.version()).toBe("Chrome/134.0.0.0");
       expect((await browser.targets()).some(target => target.type() === "page")).toBe(true);
@@ -195,9 +189,7 @@ describe("guarded client and private-pipe integration without a desktop", () => 
       await expect(browser.version()).rejects.toThrow();
     } finally { await browser.disconnect(); }
     writePrivateJson(leasePath(), grant({actions: ["direct-cdp"]}));
-    const discovered = await puppeteer.connect({browserURL: `http://127.0.0.1:${state.directPort}`, defaultViewport: null, protocolTimeout: 3000});
-    try { expect(await discovered.version()).toBe("Chrome/134.0.0.0"); }
-    finally { await discovered.disconnect(); }
+    expect((await fetch(`http://127.0.0.1:${state.directPort}/json/version`)).status).toBe(403);
     rmSync(leasePath());
     expect((await fetch(`http://127.0.0.1:${state.port}/direct/json/version`)).status).toBe(403);
     expect((await fetch(`http://127.0.0.1:${state.directPort}/json/version`)).status).toBe(403);
@@ -210,24 +202,22 @@ describe("guarded client and private-pipe integration without a desktop", () => 
   test.each([
     {mode: "foreground", networkMode: "proxy"}, {mode: "direct", networkMode: "proxy"},
     {mode: "foreground", networkMode: "direct"}, {mode: "direct", networkMode: "direct"},
-  ] as const)("host time-exception receipt selects only its beneficiary in $mode mode on $networkMode network", async ({mode, networkMode}) => {
-    const beneficiary = "00000000-0000-0000-0000-000000000002", issuer = "00000000-0000-0000-0000-000000000001";
-    const output = join(temporary, `exception-${mode}-${networkMode}.json`);
+  ] as const)("a confirmed browser window binds its session in $mode mode on $networkMode network", async ({mode, networkMode}) => {
+    const other = "00000000-0000-0000-0000-000000000001";
     const requests = join(temporary, `broker-${mode}-${networkMode}.log`);
-    const {lease} = exceptionGrant(["--session", beneficiary, "--duration", "8h", "--target", "owned", "--output", output, ...(mode === "direct" ? ["--direct-cdp"] : [])], issuer, state.browserId);
+    const lease = windowLease({mode, sessionId: beneficiary, seconds: 5400, targets: ["owned"], pinnedBrowserId: state.browserId}, state.browserId);
     writePrivateJson(leasePath(), lease);
-    writeFileSync(output, JSON.stringify({...state, interactionMode: mode, timeException: lease.timeException}), {mode: 0o600});
+    const window = {...lease.window, expiresAt: lease.expiresAt};
     writeFileSync(join(temporary, "client/owned-tab.json"), JSON.stringify({endpoint: state.webSocketDebuggerUrl, targetId: "owned"}));
-    writeFileSync(process.env.BROWSER_SESSION_GUARD_STATE!, `${Date.now() - 120_000}\t1`);
     const helper = (name: string, args: string[], session = beneficiary) => Bun.spawn(["node", "--import", fileURLToPath(new URL("fixtures/host-preload.js", import.meta.url)), fileURLToPath(new URL(name, import.meta.url)), ...args], {
-      env: {...process.env, PI_SESSION_ID: session, BROWSER_TOOLS_TEST_HOST_STATE: JSON.stringify({...state, networkMode}), BROWSER_TOOLS_TEST_HOST_REQUESTS: requests}, stdout: "pipe", stderr: "pipe",
+      env: {...process.env, PI_SESSION_ID: session, BROWSER_TOOLS_TEST_HOST_STATE: JSON.stringify({...state, window, networkMode}), BROWSER_TOOLS_TEST_HOST_REQUESTS: requests}, stdout: "pipe", stderr: "pipe",
     });
-    const startArgs = ["--foreground", `--network=${networkMode}`, ...(mode === "direct" ? ["--direct-cdp"] : []), "--exception", output];
+    const startArgs = ["--foreground", `--network=${networkMode}`, ...(mode === "direct" ? ["--direct-cdp"] : []), "--seconds", "5400"];
     try {
       const start = helper("../browser-start.js", startArgs);
       const [error, code] = await Promise.all([new Response(start.stderr).text(), start.exited]);
       expect(error).toBe(""); expect(code).toBe(0);
-      expect(readFileSync(requests, "utf8")).toBe("/status\n/resume\n");
+      expect(readFileSync(requests, "utf8")).toBe("/status\n/foreground\n");
       const attached = readFileSync(process.env.BROWSER_TOOLS_STATE!, "utf8");
       expect(JSON.parse(attached).networkMode).toBe(networkMode);
       const beforeLease = readFileSync(leasePath(), "utf8");
@@ -236,20 +226,20 @@ describe("guarded client and private-pipe integration without a desktop", () => 
       expect(await new Response(mismatch.stderr).text()).toContain("incompatible fixture network");
       expect(readFileSync(process.env.BROWSER_TOOLS_STATE!, "utf8")).toBe(attached);
       expect(readFileSync(leasePath(), "utf8")).toBe(beforeLease);
-      expect(readFileSync(requests, "utf8")).toBe("/status\n/resume\n/status\n/resume\n");
+      expect(readFileSync(requests, "utf8")).toBe("/status\n/foreground\n/status\n/foreground\n");
       const check = helper("../session-guard.js", ["check"]);
       expect(await check.exited).toBe(0);
-      expect(await new Response(check.stdout).text()).toContain("third-party host exception");
-      const wrongAgent = helper("../session-guard.js", ["check"], issuer);
+      expect(await new Response(check.stdout).text()).toContain("confirmed browser window");
+      const wrongAgent = helper("../session-guard.js", ["check"], other);
       expect(await wrongAgent.exited).toBe(1);
-      expect(await new Response(wrongAgent.stderr).text()).toContain("another agent session");
-      const wrongStart = helper("../browser-start.js", startArgs, issuer);
+      expect(await new Response(wrongAgent.stderr).text()).toContain("another Pi session");
+      const wrongStart = helper("../browser-start.js", startArgs, other);
       expect(await wrongStart.exited).toBe(1);
-      for (const path of ["/foreground/json/version", "/direct/json/version", `/foreground/exception/${"a".repeat(64)}/json/version`]) expect((await fetch(`http://127.0.0.1:${state.port}${path}`)).status).toBe(403);
+      for (const path of ["/foreground/json/version", "/direct/json/version", `/foreground/window/${"a".repeat(64)}/json/version`]) expect((await fetch(`http://127.0.0.1:${state.port}${path}`)).status).toBe(403);
       expect((await fetch(`http://127.0.0.1:${state.directPort}/json/version`)).status).toBe(403);
       if (mode === "direct") {
         const {default: puppeteer} = await import("puppeteer-core");
-        const browser = await puppeteer.connect({browserWSEndpoint: `${state.webSocketDebuggerUrl}/direct/exception/${lease.timeException!.token}`, defaultViewport: null, protocolTimeout: 1000});
+        const browser = await puppeteer.connect({browserWSEndpoint: `${state.webSocketDebuggerUrl}/direct/window/${lease.window!.token}`, defaultViewport: null, protocolTimeout: 1000});
         try {
           expect(await browser.version()).toBe("Chrome/134.0.0.0");
           rmSync(leasePath());
@@ -263,7 +253,6 @@ describe("guarded client and private-pipe integration without a desktop", () => 
         expect(await revoked.exited).toBe(1);
       }
     } finally {
-      rmSync(process.env.BROWSER_SESSION_GUARD_STATE!, {force: true});
       writeState(state);
       writePrivateJson(leasePath(), grant());
     }
@@ -272,7 +261,7 @@ describe("guarded client and private-pipe integration without a desktop", () => 
   test.each(["disconnect", "revocation", "expiry"])("Puppeteer %s releases debugger waits before scoped navigation and passive reuse", async kind => {
     const {default: puppeteer} = await import("puppeteer-core");
     writePrivateJson(leasePath(), grant({actions: ["direct-cdp"], expiresAt: Date.now() + (kind === "expiry" ? 1000 : 60_000)}));
-    const direct = await puppeteer.connect({browserWSEndpoint: `${state.webSocketDebuggerUrl}/direct`, defaultViewport: null, protocolTimeout: 1000});
+    const direct = await puppeteer.connect({browserWSEndpoint: `${state.webSocketDebuggerUrl}/direct/window/${fixtureWindow.token}`, defaultViewport: null, protocolTimeout: 1000});
     let guarded: any;
     try {
       expect(direct.isConnected()).toBe(true);
@@ -308,21 +297,12 @@ describe("guarded client and private-pipe integration without a desktop", () => 
     }
   });
 
-  test("broker approval requires explicit bounded confirmation and a separate direct mode", () => {
-    writePrivateJson(leasePath(), grant({actions: ["inspect"]}));
-    const previousLease = readFileSync(leasePath(), "utf8");
-    for (const request of [{}, {confirmed: true, mode: "background", seconds: 30, targets: []}, {confirmed: false, mode: "direct", seconds: 30, targets: []}, {confirmed: true, mode: "foreground", seconds: 901, targets: []}]) expect(() => approveForeground(request)).toThrow("FOCUS_BLOCKED");
-    expect(readFileSync(leasePath(), "utf8")).toBe(previousLease);
-    const scoped = approveForeground({confirmed: true, mode: "foreground", seconds: 30, targets: ["owned"]});
-    expect(scoped.launch).toBe(false); expect(scoped.actions).not.toContain("direct-cdp"); expect(scoped.actions).toContain("activate");
-    expect(approveForeground({confirmed: true, mode: "direct", seconds: 30, targets: []}).actions).toContain("direct-cdp");
-  });
-
   test("explicit approval for a stopped gateway creates a single-use launch ticket without launching", () => {
     const previous = process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR, isolated = mkdtempSync(join(tmpdir(), "focus-launch-approval-"));
     process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR = isolated;
     try {
-      const approval = approveForeground({confirmed: true, mode: "foreground", seconds: 30, targets: []});
+      const approval = windowLease(parseWindowRequest({mode: "foreground", seconds: 30, targets: [], sessionId: beneficiary}));
+      writePrivateJson(leasePath(), approval);
       expect(approval.launch).toBe(true); expect(approval.browserId).toMatch(/^[A-Za-z0-9-]+$/);
       expect(() => readPrivateJson(gatewayPath())).toThrow();
       consumeLaunch();

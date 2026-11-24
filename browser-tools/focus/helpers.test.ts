@@ -1,13 +1,18 @@
 import {expect, test} from "bun:test";
 import {readdirSync, readFileSync} from "node:fs";
 import {detectLoginWall} from "../login-wait.js";
-import {requestHostResume, resumeException} from "./host.js";
+import {requestHostResume} from "./host.js";
 import {FOCUS_PROTOCOL} from "./client.js";
 import {modeEndpoint, startOptions} from "./mode.js";
 import {foregroundRegression} from "./regression.ts";
 
 const status = {focusProtocol: FOCUS_PROTOCOL, defaultMode: "background", backgroundPolicy: "passive-dom-v1", foregroundLeases: true, directCdp: true,
-  networkSelection: "generation-v1", defaultNetworkMode: "proxy", networkModes: ["proxy", "direct"]};
+  networkSelection: "generation-v1", defaultNetworkMode: "proxy", networkModes: ["proxy", "direct"], windowConfirmation: "desktop-v1"};
+const sessionId = "00000000-0000-0000-0000-000000000001";
+const state = {mode: "host", networkMode: "proxy", focusProtocol: FOCUS_PROTOCOL, browserId: "fixture", port: 1234, directPort: 1235,
+  webSocketDebuggerUrl: "ws://127.0.0.1:1234/devtools/browser/fixture", userDataDir: "/fixture/profile"};
+const approved = () => ({sessionId, token: "a".repeat(64), expiresAt: Date.now() + 29_000});
+const options = {mode: "foreground", seconds: 30, targets: ["owned"], pinnedBrowserId: "fixture", sessionId};
 
 test("live foreground regression requires separate desktop approval before creating fixtures", async () => {
   const previous = process.env.BROWSER_TOOLS_DESKTOP_TEST_APPROVED;
@@ -19,114 +24,67 @@ test("live foreground regression requires separate desktop approval before creat
   }
 });
 
-test("login detection propagates denied/uncertain evaluation instead of bypassing policy", async () => {
+test("login detection propagates denied or uncertain evaluation", async () => {
   const page = {url: () => "https://example.test", evaluate: async () => { throw new Error("FOCUS_BLOCKED: fixture denial"); }};
   await expect(detectLoginWall(page)).rejects.toThrow("FOCUS_BLOCKED");
   await expect(detectLoginWall({url: () => "https://example.test", evaluate: async () => ({passwords: 0, otp: 0, buttons: [], title: "Fixture", text: ""})})).resolves.toBeUndefined();
 });
 
-test("legacy launchers cannot start a raw browser before focus preflight", async () => {
-  for (const response of [new Response("Not found", {status: 404}), Response.json({}), Response.json({focusProtocol: FOCUS_PROTOCOL, foregroundLeases: true, backgroundActions: 1})]) {
+test("legacy launchers fail before resume or foreground approval", async () => {
+  for (const [response, plan] of [[new Response("Not found", {status: 404}), undefined], [Response.json({}), undefined],
+    [Response.json({...status, networkSelection: undefined}), undefined], [Response.json({...status, windowConfirmation: undefined}), options]] as const) {
     const requests: string[] = [];
-    await expect(requestHostResume(async (url: string) => { requests.push(url); return response; })).rejects.toThrow("no launch was requested");
+    await expect(requestHostResume(async url => { requests.push(url); return response; }, plan)).rejects.toThrow("no launch was requested");
     expect(requests).toEqual(["http://127.0.0.1:19222/status"]);
   }
 });
 
-test("guarded host discovery requests resume only after static policy status", async () => {
-  const requests: string[] = [];
-  const state = {mode: "host", networkMode: "proxy", focusProtocol: FOCUS_PROTOCOL, browserId: "fixture", port: 1234, directPort: 1235,
-    webSocketDebuggerUrl: "ws://127.0.0.1:1234/devtools/browser/fixture", userDataDir: "/fixture/profile"};
-  const result = await requestHostResume(async (url: string) => {
-    requests.push(url);
-    return Response.json(url.endsWith("/status") ? status : state);
-  });
-  expect(result).toEqual({...state, interactionMode: "background"});
-  expect(requests).toEqual(["http://127.0.0.1:19222/status", "http://127.0.0.1:19222/resume"]);
-});
-
-test("broker denials surface their bounded FOCUS_BLOCKED reason, never arbitrary bodies", async () => {
+test("broker denials surface their bounded reason, not arbitrary bodies", async () => {
   const denial = (body: unknown) => async (url: string) => url.endsWith("/status") ? Response.json(status) : Response.json(body, {status: 409});
-  await expect(requestHostResume(denial({error: "FOCUS_BLOCKED: automation browser exited during startup; inspect logs"}), {mode: "foreground", seconds: 30, targets: []}))
+  await expect(requestHostResume(denial({error: "FOCUS_BLOCKED: automation browser exited during startup; inspect logs"}), options))
     .rejects.toThrow("FOCUS_BLOCKED: automation browser exited during startup; inspect logs");
   for (const body of [{error: "stack trace\nsecret"}, {error: "internal detail"}, {error: `FOCUS_BLOCKED: ${"x".repeat(600)}`}, "text"]) {
-    await expect(requestHostResume(denial(body), {mode: "foreground", seconds: 30, targets: []})).rejects.toThrow("FOCUS_BLOCKED: foreground approval/startup failed; inspect before retrying");
+    await expect(requestHostResume(denial(body), options)).rejects.toThrow("FOCUS_BLOCKED: foreground approval/startup failed; inspect before retrying");
   }
 });
 
-test("modes and durations must be explicit; default never selects or renews elevated access", () => {
+test("only explicit foreground requests a window, with its own duration and network", () => {
   expect(startOptions([])).toEqual({mode: "background", seconds: 900, networkMode: "proxy"});
-  expect(startOptions(["--host", "--resume"])).toEqual({mode: "background", seconds: 900, networkMode: "proxy"});
-  expect(startOptions(["--foreground", "--seconds", "90"])).toEqual({mode: "foreground", seconds: 90, networkMode: "proxy"});
+  expect(startOptions(["--host", "--resume"])).toEqual(startOptions([]));
+  expect(startOptions(["--foreground", "--seconds", "5400"])).toEqual({mode: "foreground", seconds: 5400, networkMode: "proxy"});
   expect(startOptions(["--foreground", "--direct-cdp"])).toEqual({mode: "direct", seconds: 900, networkMode: "proxy"});
-  expect(startOptions(["--foreground", "--seconds", "900"])).toEqual({mode: "foreground", seconds: 900, networkMode: "proxy"});
-  expect(startOptions(["--foreground", "--exception", "/private/receipt.json"])).toEqual({mode: "foreground", seconds: 900, networkMode: "proxy", exceptionFile: "/private/receipt.json"});
   expect(startOptions(["--network=direct"])).toEqual({mode: "background", seconds: 900, networkMode: "direct"});
   expect(startOptions(["--foreground", "--network=direct"])).toEqual({mode: "foreground", seconds: 900, networkMode: "direct"});
-  expect(startOptions(["--foreground", "--network=direct", "--exception", "/private/receipt.json"])).toEqual({mode: "foreground", seconds: 900, networkMode: "direct", exceptionFile: "/private/receipt.json"});
-  for (const args of [["--network=automatic"], ["--network=proxy", "--network=direct"], ["--network", "direct"]]) expect(() => startOptions(args)).toThrow();
-  for (const args of [["--direct-cdp"], ["--seconds", "30"], ["--foreground", "--seconds", "0"], ["--foreground", "--seconds", "901"], ["--exception", "receipt"], ["--foreground", "--exception"], ["--foreground", "--exception", "receipt", "--seconds", "900"], ["--foreground", "--foreground"], ["--keep-cookies"], ["--unknown"]]) expect(() => startOptions(args)).toThrow();
-  expect(modeEndpoint({port: 1, webSocketDebuggerUrl: "ws://127.0.0.1:1/base"}).browserWSEndpoint).toBe("ws://127.0.0.1:1/base");
-  expect(modeEndpoint({port: 1, directPort: 2, webSocketDebuggerUrl: "ws://127.0.0.1:1/base", interactionMode: "direct"}).browserWSEndpoint).toBe("ws://127.0.0.1:1/base/direct");
+  for (const args of [["--direct-cdp"], ["--seconds", "30"], ["--foreground", "--seconds", "0"], ["--foreground", "--seconds", "1e3"],
+    ["--foreground", "--exception", "receipt"], ["--foreground", "--foreground"], ["--keep-cookies"], ["--network=automatic"],
+    ["--network=proxy", "--network=direct"], ["--network", "direct"], ["--unknown"]]) expect(() => startOptions(args)).toThrow();
+  expect(modeEndpoint(state).browserWSEndpoint).toBe(state.webSocketDebuggerUrl);
 });
 
-test("only explicit foreground/direct startup requests an approval", async () => {
-  for (const mode of ["foreground", "direct"]) {
-    const requests: {url: string; options: RequestInit}[] = [];
-    const state = {mode: "host", networkMode: "proxy", focusProtocol: FOCUS_PROTOCOL, browserId: "fixture", port: 1234, directPort: 1235,
-      webSocketDebuggerUrl: "ws://127.0.0.1:1234/devtools/browser/fixture", userDataDir: "/fixture/profile"};
-    const result = await requestHostResume(async (url: string, options: RequestInit) => {
-      requests.push({url, options}); return Response.json(url.endsWith("/status") ? status : state);
-    }, {mode, seconds: 30, targets: ["owned"]});
-    expect(result.interactionMode).toBe(mode);
-    expect(requests.map(request => request.url)).toEqual(["http://127.0.0.1:19222/status", "http://127.0.0.1:19222/foreground"]);
-    expect(JSON.parse(requests[1]!.options.body as string)).toEqual({mode, seconds: 30, targets: ["owned"], networkMode: "proxy", confirmed: true});
-  }
-});
-
-test("network selection is forwarded independently of interaction mode and verified on return", async () => {
+test("network selection is independent of interaction mode, with no caller-supplied confirmation", async () => {
   for (const mode of ["background", "foreground", "direct"]) for (const networkMode of ["proxy", "direct"]) {
     const requests: {url: string; options: RequestInit}[] = [];
-    const state = {mode: "host", networkMode, focusProtocol: FOCUS_PROTOCOL, browserId: "fixture", port: 1234, directPort: 1235,
-      webSocketDebuggerUrl: "ws://127.0.0.1:1234/devtools/browser/fixture", userDataDir: "/fixture/profile"};
-    const request = async (url: string, options: RequestInit) => {
-      requests.push({url, options});
-      return Response.json(url.endsWith("/status") ? status : state);
+    const plan = {...options, mode, networkMode};
+    const window = mode === "background" ? undefined : approved();
+    const request = async (url: string, input: RequestInit) => {
+      requests.push({url, options: input});
+      return Response.json(url.endsWith("/status") ? status : {...state, networkMode, window});
     };
-    expect((await requestHostResume(request, {mode, networkMode, seconds: 30, targets: []})).networkMode).toBe(networkMode);
-    expect(JSON.parse(requests[1]!.options.body as string)).toEqual(mode === "background" ? {networkMode} : {mode, networkMode, seconds: 30, targets: [], confirmed: true});
-    for (const returned of [undefined, networkMode === "proxy" ? "direct" : "proxy"]) {
-      await expect(requestHostResume(async url => Response.json(url.endsWith("/status") ? status : {...state, networkMode: returned}),
-        {mode, networkMode, seconds: 30, targets: []})).rejects.toThrow("invalid host gateway identity");
+    const result = await requestHostResume(request, plan);
+    expect(result).toEqual({...state, networkMode, interactionMode: mode, ...(window ? {window} : {})});
+    expect(requests.map(({url}) => new URL(url).pathname)).toEqual(["/status", mode === "background" ? "/resume" : "/foreground"]);
+    expect(JSON.parse(requests[1]!.options.body as string)).toEqual(mode === "background" ? {networkMode} : plan);
+    for (const wrong of [undefined, networkMode === "proxy" ? "direct" : "proxy"]) {
+      await expect(requestHostResume(async url => Response.json(url.endsWith("/status") ? status : {...state, networkMode: wrong, window}), plan))
+        .rejects.toThrow("invalid host gateway identity");
     }
   }
 });
 
-test("brokers without launch-time network selection fail before a resume or approval", async () => {
-  const requests: string[] = [];
-  await expect(requestHostResume(async url => {
-    requests.push(url); return Response.json({...status, networkSelection: undefined});
-  })).rejects.toThrow("no launch was requested");
-  expect(requests).toEqual(["http://127.0.0.1:19222/status"]);
-});
-
-test("exception receipts passively verify network and generation without issuing a replacement grant", async () => {
-  for (const networkMode of ["proxy", "direct"]) for (const interactionMode of ["foreground", "direct"]) {
-    const requests: {url: string; options: RequestInit}[] = [];
-    const state = {mode: "host", networkMode, focusProtocol: FOCUS_PROTOCOL, browserId: "fixture", port: 1234, directPort: 1235,
-      webSocketDebuggerUrl: "ws://127.0.0.1:1234/devtools/browser/fixture", userDataDir: "/fixture/profile"};
-    const receipt = {...state, interactionMode, timeException: {token: "fixture", expiresAt: 123456}};
-    const request = async (url: string, options: RequestInit) => {
-      requests.push({url, options}); return Response.json(url.endsWith("/status") ? status : state);
-    };
-    expect(await resumeException(receipt, networkMode, request)).toEqual(receipt);
-    expect(requests.map(({url}) => url)).toEqual(["http://127.0.0.1:19222/status", "http://127.0.0.1:19222/resume"]);
-    expect(JSON.parse(requests[1]!.options.body as string)).toEqual({networkMode});
-    for (const invalid of [{...receipt, mode: "local"}, {...receipt, focusProtocol: "legacy"}, {...receipt, browserId: "other"},
-      {...receipt, port: 4321}, {...receipt, directPort: 4321}, {...receipt, userDataDir: "/other"}, {...receipt, webSocketDebuggerUrl: "ws://other"}]) {
-      await expect(resumeException(invalid, networkMode, request)).rejects.toThrow("receipt does not match");
-    }
-    await expect(resumeException(receipt, networkMode === "proxy" ? "direct" : "proxy", request)).rejects.toThrow("invalid host gateway identity");
+test("foreground startup refuses unbound or oversized windows", async () => {
+  for (const [window, message] of [[undefined, "expired, invalid"], [{...approved(), sessionId: "other"}, "another Pi session"],
+    [{...approved(), expiresAt: Date.now() + 60_000}, "longer window"]] as const) {
+    await expect(requestHostResume(async url => Response.json(url.endsWith("/status") ? status : {...state, window}), options)).rejects.toThrow(message);
   }
 });
 

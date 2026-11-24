@@ -47,7 +47,7 @@ test("CLI help is offline and unknown/missing flags fail closed", async () => {
   const script = new URL("../browser-rotate.js", import.meta.url).pathname;
   const help = Bun.spawn([process.execPath, script, "--help"], {stdout: "pipe", stderr: "pipe"});
   expect(await help.exited).toBe(0);
-  expect(await new Response(help.stdout).text()).toContain("No launch");
+  expect(await new Response(help.stdout).text()).toContain("Does not launch, grant or renew a window");
   for (const args of [[], ["--foreground"], ["--confirm-idle", "--network=direct"], ["--confirm-idle", "--seconds", "900"]]) {
     const child = Bun.spawn([process.execPath, script, ...args], {stdout: "pipe", stderr: "pipe"});
     expect(await child.exited).toBe(1);

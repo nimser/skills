@@ -6,7 +6,7 @@ import {spawn} from "node:child_process";
 import {createInterface} from "node:readline";
 import puppeteer from "puppeteer-core";
 import {connectGuardedBrowser} from "./client.js";
-import {approveForeground, leasePath, readPrivateJson} from "./lease.ts";
+import {leasePath, readPrivateJson, windowLease, writePrivateJson} from "./lease.ts";
 import {FocusTrace, fixtureHtml} from "./measurement.ts";
 
 export async function foregroundRegression(): Promise<void> {
@@ -62,6 +62,11 @@ export async function foregroundRegression(): Promise<void> {
   const watchdog = setTimeout(() => { for (const child of children) if (child.process.exitCode === null) child.process.kill("SIGTERM"); }, 245_000);
   const check = (value: unknown, message: string): void => { if (!value) throw new Error(message); };
   const seconds = () => { const remaining = Math.floor((deadline - Date.now()) / 1000); check(remaining > 0, "Dedicated test window expired"); return remaining; };
+  function approveFixture(mode: "foreground" | "direct", duration: number, targets: string[], browserId?: string) {
+    const lease = windowLease({mode, seconds: duration, targets, pinnedBrowserId: browserId, sessionId: "00000000-0000-0000-0000-000000000001"}, browserId);
+    delete lease.window;
+    writePrivateJson(leasePath(), lease);
+  }
   const denied = async (operation: () => Promise<unknown>) => {
     try { await operation(); } catch (error) { check(/FOCUS_BLOCKED|closed|disconnect|approval|denied/i.test(String(error)), "Unexpected denial reason"); return; }
     throw new Error("Operation unexpectedly permitted");
@@ -86,7 +91,7 @@ export async function foregroundRegression(): Promise<void> {
   const launch = async (profile: string, appId: string, directory: string) => {
     process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR = directory;
     try {
-      approveForeground({mode: "direct", confirmed: true, seconds: seconds(), targets: []});
+      approveFixture("direct", seconds(), []);
       const logfile = join(root, `${profile}.log`), log = openSync(logfile, "ax", 0o600);
       let child: ReturnType<typeof Bun.spawn>;
       try {
@@ -199,8 +204,8 @@ export async function foregroundRegression(): Promise<void> {
       await Bun.sleep(100);
       check(trace.decoyInputs > before, "Decoy structural input instrumentation unavailable");
     });
-    approveForeground({mode: "foreground", confirmed: true, seconds: seconds(), targets: [targetId]});
-    shared = await connectGuardedBrowser({...state, interactionMode: "foreground"}, runtime);
+    approveFixture("foreground", seconds(), [targetId], state.browserId);
+    shared = await connectGuardedBrowser({...state, interactionMode: "foreground"});
     const owned = await shared.page(targetId);
     await scenario("scoped-navigation-reload-evaluation", async () => {
       await owned.goto(`${origin}/editor`, {waitUntil: "domcontentloaded", timeout: 8000});
@@ -226,7 +231,7 @@ export async function foregroundRegression(): Promise<void> {
       await denied(() => cdp.send("Unreviewed.newMethod"));
     });
     await shared.disconnect(); shared = undefined;
-    shared = await connectGuardedBrowser({...state, interactionMode: "background"}, runtime);
+    shared = await connectGuardedBrowser({...state, interactionMode: "background"});
     await scenario("passive-with-active-approval-never-upgrades", async () => {
       const page = await shared!.page(targetId);
       await denied(() => page.evaluate("document.title"));
@@ -254,8 +259,8 @@ export async function foregroundRegression(): Promise<void> {
     });
     await shared.disconnect(); shared = undefined;
     check(seconds() >= 3, "Insufficient approved time for the expiry experiment");
-    approveForeground({mode: "foreground", confirmed: true, seconds: 2, targets: [targetId]});
-    shared = await connectGuardedBrowser({...state, interactionMode: "foreground"}, runtime);
+    approveFixture("foreground", 2, [targetId], state.browserId);
+    shared = await connectGuardedBrowser({...state, interactionMode: "foreground"});
     const expiring = await shared.page(targetId);
     await scenario("live-expiry-stops-attached-session-and-discovery", async () => {
       check(await expiring.evaluate(() => document.querySelectorAll("textarea").length) === 1, "Pre-expiry scope unavailable");
@@ -277,8 +282,8 @@ export async function foregroundRegression(): Promise<void> {
       await Promise.race([child.process.exited, Bun.sleep(6000).then(() => { if (child.process.exitCode === null) child.process.kill("SIGKILL"); })]);
       Bun.spawnSync(["/usr/bin/firejail", `--shutdown=brave-${child.profile}`], {stdout: "pipe", stderr: "pipe"});
     }
-    rmSync(join(focus, "foreground.json"), {force: true});
-    rmSync(join(root, "decoy-focus/foreground.json"), {force: true});
+    rmSync(join(focus, "window.json"), {force: true});
+    rmSync(join(root, "decoy-focus/window.json"), {force: true});
     lines.close(); stream.kill("SIGTERM"); server.stop(true);
     if (previous === undefined) delete process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR;
     else process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR = previous;

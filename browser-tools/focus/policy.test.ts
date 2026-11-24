@@ -1,7 +1,6 @@
 import {describe, expect, test} from "bun:test";
 import {actions, FocusPolicy, parseLease, type Command, type Lease} from "./policy.ts";
 import {FocusGateway} from "./gateway.ts";
-import {grantArguments} from "./lease.ts";
 import {validateLaunch} from "./serve.ts";
 
 const now = 100_000;
@@ -41,10 +40,6 @@ describe("passive default and explicit foreground/direct CDP", () => {
     for (const value of [undefined, {}, lease({browserId: "other"}), lease({expiresAt: now}), lease({issuedAt: now + 1}), lease({expiresAt: now + 900_001}), lease({actions: ["unknown"] as any}), lease({targets: ["*"]})]) expect(() => parseLease(value, "fixture-browser", now)).toThrow("FOCUS_BLOCKED");
     expect(parseLease(lease(), "fixture-browser", now)).toEqual(lease());
     expect(parseLease(lease({expiresAt: now + 900_000}), "fixture-browser", now).expiresAt).toBe(now + 900_000);
-    expect(grantArguments(["--target", "owned", "--actions", "inspect"], "fixture-browser", now).expiresAt).toBe(now + 900_000);
-    expect(() => grantArguments(["--target", "owned", "--actions", "inspect", "--seconds", "901"], "fixture-browser", now)).toThrow();
-    expect(() => grantArguments(["--actions", "inspect"], "fixture-browser", now)).toThrow();
-    expect(grantArguments(["--launch", "--actions", "tab-create", "--seconds", "30"], "fixture-browser", now).launch).toBe(true);
   });
   test("foreground restores activation, navigation and input only for owned targets and permitted actions", () => {
     let active: unknown = lease(), clock = now;

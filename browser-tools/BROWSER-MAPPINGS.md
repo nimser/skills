@@ -134,23 +134,17 @@ observed; do not invent selectors. `validate` is offline schema validation and
 makes no claim about live selectors. Existing unversioned mappings need a manual
 review and conversion, not blind import of code, personal data or stale paths.
 
-For a live mapping check, obtain explicit user approval for a foreground window
-and use `browser-start.js --foreground --seconds 120`. This deliberately selects
-foreground mode and requests a bounded scoped lease; default `--host --resume`
-does not. Navigate only when separately authorized. Start a session timer once
-for the approved work (90 minutes by default); never reset it to extend an expired
-task. A requested extension requires a different host agent and the private
-receipt workflow in `focus/README.md#requested-time-exceptions`. Mapping checks
-remain foreground JavaScript, not passive DOM reads. Ordinary direct CDP requires
-separate `--foreground --direct-cdp` approval and is not a fallback.
+For a live mapping check, request and confirm a foreground window in the Pi
+session with `/navigation` or `browser-start.js --foreground`. The default
+passive resume cannot evaluate JavaScript. Navigate only when authorized. Direct
+CDP requires a separate browser-wide confirmation and is not a fallback.
 
 ```bash
-node {baseDir}/session-guard.js start
 bun {baseDir}/mappings/cli.ts check .agents/artifacts/browser-mappings.json empty-editor
 bun {baseDir}/mappings/cli.ts check .agents/artifacts/browser-mappings.json empty-editor title
 ```
 
-`check` enforces the timer and reads only the owned tab. It never navigates,
+`check` requires an active window and reads only the owned tab. It never navigates,
 clicks, fills, submits, selects another tab, retries, updates mappings or dumps
 field values. It checks route and visible password/one-time-code fields first,
 then markers and element count, visibility, tag/type and enabled state. The

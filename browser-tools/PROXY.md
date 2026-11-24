@@ -36,10 +36,9 @@ its proxy default in `/status`. Live status, returned client state and startup
 output name `networkMode`. Clients reject brokers without that capability and
 reject returned identities whose network differs from the request.
 
-Time-exception receipts do not grant network changes. Selecting one first
-passively verifies the requested network and pinned generation through the
-broker, without issuing a new grant. Proxy remains the default; add
-`--network=direct` only for an explicitly approved direct-network browser.
+Confirming a browser window does not change the network of a running browser.
+Proxy remains the default. Add `--network=direct` only for an explicitly approved
+direct-network browser.
 
 ## Explicit pre-login rotation
 
@@ -48,15 +47,15 @@ account change, from the host or a host-network devpod:
 
 ```sh
 ./browser-rotate.js --confirm-idle
-# Requires separate foreground/launch approval and remaining task budget:
+# Confirm the new launch on the host desktop:
 ./browser-start.js --foreground --seconds 120
 ```
 
 The rotation helper requires a pinned proxy generation and the broker's
 `proxyRotation: stop-before-relaunch-v1` capability. It stops only that browser
-and relay, preserves cookies and timers, and leaves Automation stopped. Stale
+and relay, preserves cookies, and leaves Automation stopped. Stale
 requests, direct-network browsers and unsupported brokers fail closed. It never
-launches, changes networks, renews budgets or retries. The flag asserts user
+launches, changes networks, renews windows or retries. The flag asserts user
 consent to interrupt every Automation task; an agent must not infer it from a
 failed request, expired approval or account restriction.
 
@@ -64,9 +63,8 @@ The next approved launch selects a different upstream sticky port, which does
 not guarantee a different IP. Record the prior exit privately, then verify that
 both browser and relay share a changed exit **before** account login. Stop on an
 unchanged/mismatched address; never retry or bypass the proxy automatically.
-Foreground startup replaces an obsolete client pin, not a task timer. Old
-browser-generation-bound exception receipts are invalid; a replacement requires
-a separate host-issued grant with an approved fixed expiry.
+A window from an earlier browser generation is invalid. Confirm a new window
+for the replacement generation.
 
 ## Host-only credentials
 

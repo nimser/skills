@@ -38,12 +38,10 @@ actions from isolated successes or fake/headless tests.
 - Allocation and teardown have five-second deadlines. Unsupported allocation,
   malformed replies, cleanup errors or timeouts block gateway reuse until
   explicitly approved recovery; there is no fallback to the persistent root.
-- Default discovery is `/json/version`; elevated discovery is
-  `/foreground/json/version` or `/direct/json/version`. Corresponding WebSocket
-  paths append `/foreground` or `/direct` to the pinned base browser path. A
-  separate guarded metadata-only port supports Puppeteer's root `/json/version`
-  `browserURL` discovery; it returns the main gateway's direct WebSocket path and
-  accepts no CDP sockets or tab verbs. It also requires direct-CDP approval.
+- Default discovery is `/json/version`. Elevated endpoints require a
+  `/window/<token>` capability. Elevated WebSocket paths also carry `/foreground`
+  or `/direct`. Use `browserWSEndpoint` for Puppeteer. Root `browserURL` discovery
+  cannot carry the capability.
 - Elevated discovery/connection requires approval; every dispatch and incoming
   forwarding checks it again. An elevated connection never downgrades silently.
 - `policy.ts` applies the passive allowlist without reading approval files.
@@ -54,15 +52,15 @@ actions from isolated successes or fake/headless tests.
   explicit grant. `client.js` checks live generation/mode/URL identity before
   opening its socket. Legacy v1/raw brokers fail before a launch request.
   Navigation shares one monotonic deadline across page enablement, navigation,
-  DOM-load waiting and frame-tree reads, capped by the recorded task budget.
+  DOM-load waiting and frame-tree reads, capped by the confirmed window.
   Timeout errors name the protocol method, not URLs or command parameters.
 - Launch permission is separate and single-use. Default `/resume` never launches,
-  even if a launch lease exists. `/foreground` validates an explicit bounded
-  confirmation before allowing startup. No automatic restart/reset/retry.
+  even if a launch lease exists. `/foreground` requires a positive host desktop
+  confirmation before allowing startup. No automatic restart, reset or retry.
 
-A scoped grant names targets and actions for 900 seconds by default and at most
-900 seconds without a host-issued time exception. Confirmed blank
-owned tabs join its foreground scope; popups/workers do not. Replacing approval
+A scoped window names the pinned target and action classes for 900 seconds by
+default, or the duration shown at confirmation. Blank owned tabs join its
+foreground scope. Popups and workers do not. Replacing approval
 never confers old foreground permissions. Passive ownership survives a grant's
 expiry until target destruction or browser exit, not browser generation changes.
 Default target lists/events are filtered to owned pages. Direct mode can expose
@@ -88,138 +86,40 @@ An incompatible request fails before a grant, restart or switch; a failed proxy
 never causes direct access. A network change needs an approved stop and a fresh
 launch request, not an attachment retry.
 
-## Explicit approvals
+## Confirming a browser window
 
-After the user approves the affected profile, tab/actions and foreground window,
-pause unrelated typing and use:
+In Pi, the owner runs `/navigation` for 15 minutes or `/navigation 90` for
+90 minutes. The equivalent owner-run shell commands are:
 
 ```sh
-~/skills/browser-tools/browser-start.js --foreground --seconds 120
-# Only for a separate, explicit request for browser-wide/direct CDP access:
-~/skills/browser-tools/browser-start.js --foreground --direct-cdp --seconds 120
+~/skills/browser-tools/browser-start.js --foreground
+~/skills/browser-tools/browser-start.js --foreground --seconds 5400
+# Only for a separate request for browser-wide CDP access:
+~/skills/browser-tools/browser-start.js --foreground --direct-cdp
 ~/skills/browser-tools/browser-endpoint.js --direct-cdp
 ```
 
-The flags assert explicit user consent and the broker records the short-lived
-lease; no host-terminal prompt is needed. Agents must not select/renew elevation
-because default attachment failed or an operation needs it. A direct-CDP request
-requires both flags. The shared helper caps approval by the remaining recorded
-task budget, which defaults to 90 minutes and cannot exceed 90 minutes without a
-host-issued exception. Shorter explicit leases/tasks remain supported; direct
-clients must also honor task-budget changes.
+The host Wayland dialog displays the session, network, scope and duration.
+Only a positive desktop answer starts the fixed window. No caller-supplied
+approval field, terminal answer, timeout, reconnect or background resume can
+issue a window. The host refuses concurrent prompts and drops requests if the
+browser generation changes while waiting. Renewals are unlimited, but each
+requires a new dialog and a new affirmative answer. The shell/API can request
+that dialog but cannot supply the answer. Agents must leave renewal requests to
+the owner.
 
-The host runtime is `$XDG_RUNTIME_DIR/browser-tools-focus-UID`, or the same private
-subdirectory of the temporary directory without XDG runtime. Its files and
-`BROWSER_TOOLS_FOCUS_RUNTIME_DIR` are canonical owner-controlled state, not an
-agent-writable container-local approval cache. Client instances remain under
-`BROWSER_TOOLS_RUNTIME_DIR`. Environment flags cannot select elevation.
+Expiry or revocation retires protocol sessions but does not undo scripts, input,
+network effects or delayed focus changes. Inspect before retrying uncertain work.
+Manual login, site rules, mutation approval, network changes and browser-wide
+CDP remain separate from a scoped navigation window.
 
-For narrower grants, the owner can still issue an interactive target/action lease:
-
-```sh
-bun ~/skills/browser-tools/focus/lease.ts grant --target OWNED_TARGET_ID \
-  --actions inspect,javascript,activate --seconds 60
-bun ~/skills/browser-tools/focus/lease.ts status
-bun ~/skills/browser-tools/focus/lease.ts revoke
-```
-
-Selection and issuance are separate: a manually approved CDP helper must explicitly
-choose the `/foreground` WebSocket path; a manual grant does not switch a default
-client instance. Standard start commands issue their own broader scoped grant.
-Do not infer mode from the grant's action list. `activate` restores
-owned-page `Page.bringToFront`/`Target.activateTarget`; `keyboard` is CDP page
-input, never global desktop injection. Manual login, consent, payload approval
-and site restrictions are independent of foreground/direct permission.
-
-Lease expiry/revocation blocks later dispatch and retires the client's protocol
-sessions, not already-sent work. Teardown does not undo browser-wide settings,
-scripts, network writes or delayed focus requests. A command timeout alone does
-not cancel work or end the connection. Do not resume typing or declare an
-uncertain mutation absent because approval expired or cleanup completed. Inspect
-before retrying; never restore focus, close windows, renew grants or restart
-browsers automatically.
-
-## Requested time exceptions
-
-A requested exception needs a different agent session running on the host.
-`exception.ts grant` verifies host execution and reads the issuer's `PI_SESSION_ID`;
-self-grants, absent agent identities, containers and unverified host detection are
-refused. The HTTP broker never issues exceptions and rejects durations above
-900 seconds. This is a trusted-agent workflow, not authentication against
-same-UID code able to forge environment variables or edit private approval files.
-
-A user's explicit request for a duration includes the bounded foreground
-preparation needed to issue a usable receipt for the named session; no second
-confirmation is required. The host agent verifies the beneficiary's client
-instance and current generation, warns about possible focus changes, detaches
-stale client state with `browser-stop.js`, and requests a 120-second foreground
-window through `browser-start.js` when needed. This can launch a stopped proxy
-browser and create a new owned blank tab. Verify the resulting pin and live
-gateway before granting the requested duration. Use the existing beneficiary
-instance without forging its `PI_SESSION_ID`, resetting task timers or relocating
-host approval state. An expired timer, denied preparation or unavailable gateway
-is a blocker; never retry an uncertain operation automatically. No shutdown,
-proxy rotation, network switch, foreign-tab adoption or browser-wide CDP access
-is implicit. The exception command itself still never launches a browser.
-
-Set `BENEFICIARY_SESSION` to the beneficiary's Pi session UUID, `OWNED_TARGET` to
-its approved tab ID, and `PRIVATE_RECEIPT` to a new absolute private file path.
-For eight hours of approved unattended work, on the host from the other agent
-session:
-
-```sh
-bun ~/skills/browser-tools/focus/exception.ts grant \
-  --session "$BENEFICIARY_SESSION" --duration 8h \
-  --target "$OWNED_TARGET" --output "$PRIVATE_RECEIPT"
-```
-
-`--duration` accepts a positive integer followed by `s`, `m`, `h` or `d`, such as
-`30m`, `8h` or `1d`. It fixes the absolute expiry once at issuance, not when the
-beneficiary attaches or reconnects. There is no 15-minute/90-minute ceiling for
-this host-issued exception. Alternatively, use `--until "$APPROVED_EXPIRY"` with
-an explicit future ISO timestamp including timezone. Supply exactly one of
-`--duration` and `--until`; missing, repeated, malformed or overflowing values
-are refused. No renewal is implicit.
-
-Repeat `--target` for other explicitly approved tabs. Browser-wide access needs
-separate approval and the additional `--direct-cdp` flag. Issuance requires a
-running, verified exception-capable gateway; it never launches/restarts a browser
-or changes networks. It replaces the shared foreground grant, so existing elevated
-connections retire. The receipt is created mode 0600 without overwriting a file;
-its capability/endpoints are never printed. Transfer it privately to the
-beneficiary's runtime, not Git, reports or an unrelated client instance.
-
-With the beneficiary's original `PI_SESSION_ID`, select the receipt explicitly:
-
-```sh
-~/skills/browser-tools/browser-start.js --foreground --exception /absolute/private/receipt.json
-# For a separately approved direct-CDP exception, add --direct-cdp.
-```
-
-Do not pass `--seconds`. Network selection still defaults to proxy; an approved
-direct-network browser requires `--network=direct` on receipt selection too.
-The helper passively verifies network and generation with the broker without
-requesting a new grant, launching or switching the browser.
-The exception uses its fixed expiry as both foreground
-and task deadline, even if the original task timer has expired. It does not reset
-that timer or create an automatically renewable budget. Ordinary task `start`
-refuses existing timers and budgets above 90 minutes. An explicit new task needs
-new approval, not stop/start as an extension of an existing task.
-
-The receipt binds issuer, beneficiary, browser generation, scopes and a random
-capability. Shared clients check the beneficiary on startup and every send;
-gateway discovery, sockets, dispatch and forwarding require the capability.
-Normal foreground/direct paths deny an exceptional grant; passive reads stay
-passive. Treat the receipt as a bearer secret: raw clients possessing it are
-trusted, not cryptographically bound to a Pi process. Direct Puppeteer uses the
-returned `browserWSEndpoint`; its root-only `browserURL` discovery cannot carry
-the exception path and is not returned for that mode.
-
-`bun ~/skills/browser-tools/focus/lease.ts revoke` revokes the shared grant,
-including its exception. Deleting only a transferred receipt does not revoke it.
-A new grant replaces the exception; already-issued work remains uncertain.
-Never renew exceptions automatically or grant unrelated accounts, mutations,
-authentication bypasses or network changes with a time extension.
+The host stores the active window in `$XDG_RUNTIME_DIR/browser-tools-focus-UID`
+and returns a random bearer capability to the requesting instance. Shared
+clients check the Pi session and deadline. The gateway checks the capability
+and expiry at discovery, admission, dispatch and forwarding. Keep the capability
+and elevated URLs out of logs and Git. A confirmed replacement retires the
+previous elevated connection. The host owner can inspect or revoke it with
+`bun ~/skills/browser-tools/focus/lease.ts status` or `revoke`.
 
 ## Fixture-only foreground regression
 

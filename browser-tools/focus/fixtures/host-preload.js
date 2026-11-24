@@ -9,9 +9,10 @@ globalThis.fetch = async (url, options) => {
   if (options.method !== "POST" || options.headers["x-browser-tools"] !== "host-v1") throw new Error("Invalid fixture broker request");
   if (parsed.pathname === "/status") return Response.json({focusProtocol: "browser-tools-focus-v2", defaultMode: "background",
     backgroundPolicy: "passive-dom-v1", foregroundLeases: true, directCdp: true, networkSelection: "generation-v1",
-    defaultNetworkMode: "proxy", networkModes: ["proxy", "direct"], networkMode: state.networkMode});
+    defaultNetworkMode: "proxy", networkModes: ["proxy", "direct"], networkMode: state.networkMode, windowConfirmation: "desktop-v1"});
   const body = JSON.parse(options.body);
-  if (parsed.pathname !== "/resume" || Object.keys(body).join() !== "networkMode") throw new Error("Fixture broker permits only passive network attachment");
   if (body.networkMode !== state.networkMode) return Response.json({error: "FOCUS_BLOCKED: incompatible fixture network; no grant, restart or switch"}, {status: 409});
-  return Response.json(state);
+  if (parsed.pathname === "/foreground" && body.sessionId !== state.window?.sessionId) return Response.json({error: "FOCUS_BLOCKED: fixture approval refused"}, {status: 409});
+  if (parsed.pathname === "/foreground" && body.confirmed === undefined) return Response.json(state);
+  throw new Error("Invalid fixture window request");
 };

@@ -1,4 +1,5 @@
 import {FOCUS_PROTOCOL} from "./client.js";
+import {sessionIdPattern, validDuration, windowRemaining, WINDOW_CONFIRMATION} from "./limits.js";
 
 /** Broker denials are single-line FOCUS_BLOCKED reasons; anything else falls back to a generic message. */
 async function brokerReason(/** @type {Response} */ response) {
@@ -9,11 +10,14 @@ async function brokerReason(/** @type {Response} */ response) {
 }
 
 /** @param {(url: string, options: RequestInit) => Promise<Response>} [request]
- * @param {{mode: string, seconds: number, targets: string[], networkMode?: string}} [approval] */
+ * @param {{mode: string, seconds: number, targets: string[], networkMode?: string, pinnedBrowserId?: string, sessionId?: string}} [approval] */
 export async function requestHostResume(request = fetch, approval = {mode: "background", seconds: 60, targets: /** @type {string[]} */ ([])}) {
   if (!["background", "foreground", "direct"].includes(approval.mode)) throw new Error("FOCUS_BLOCKED: invalid mode");
   const networkMode = approval.networkMode === undefined ? "proxy" : approval.networkMode;
   if (!["proxy", "direct"].includes(networkMode)) throw new Error("FOCUS_BLOCKED: invalid network mode");
+  const explicit = approval.mode !== "background";
+  const sessionId = approval.sessionId ?? process.env.PI_SESSION_ID;
+  if (explicit && (!sessionIdPattern.test(sessionId ?? "") || !validDuration(approval.seconds))) throw new Error("FOCUS_BLOCKED: a valid Pi session and duration are required for a browser window");
   const options = {method: "POST", headers: {"x-browser-tools": "host-v1"}, signal: AbortSignal.timeout(30_000)};
   const status = await request("http://127.0.0.1:19222/status", options);
   if (!status.ok) throw new Error(await brokerReason(status) ?? "FOCUS_BLOCKED: host launcher has no guarded-status capability; no launch was requested");
@@ -22,11 +26,12 @@ export async function requestHostResume(request = fetch, approval = {mode: "back
   if (capability?.focusProtocol !== FOCUS_PROTOCOL || capability.defaultMode !== "background" || capability.backgroundPolicy !== "passive-dom-v1"
     || capability.foregroundLeases !== true || capability.directCdp !== true || capability.networkSelection !== "generation-v1"
     || capability.defaultNetworkMode !== "proxy" || !Array.isArray(capability.networkModes)
-    || !["proxy", "direct"].every(mode => capability.networkModes.includes(mode))) throw new Error("FOCUS_BLOCKED: legacy or unsupported host launcher; no launch was requested");
-  const explicit = approval.mode !== "background";
+    || !["proxy", "direct"].every(mode => capability.networkModes.includes(mode))
+    || (explicit && capability.windowConfirmation !== WINDOW_CONFIRMATION)) throw new Error("FOCUS_BLOCKED: legacy or unsupported host launcher; no launch was requested");
   const response = await request(`http://127.0.0.1:19222/${explicit ? "foreground" : "resume"}`, {...options,
+    signal: explicit ? AbortSignal.timeout(85_000) : options.signal,
     headers: {...options.headers, "content-type": "application/json"},
-    body: JSON.stringify(explicit ? {...approval, networkMode, confirmed: true} : {networkMode})});
+    body: JSON.stringify(explicit ? {...approval, networkMode, sessionId} : {networkMode})});
   if (!response.ok) throw new Error(await brokerReason(response) ?? `FOCUS_BLOCKED: ${explicit ? "foreground approval/startup failed; inspect before retrying" : "no running guarded browser; request explicit foreground startup"}`);
   const state = await response.json();
   if (state?.mode !== "host" || state.focusProtocol !== FOCUS_PROTOCOL || typeof state.browserId !== "string"
@@ -34,6 +39,10 @@ export async function requestHostResume(request = fetch, approval = {mode: "back
     || !Number.isInteger(state.directPort) || state.directPort < 1 || state.directPort > 65535 || state.directPort === state.port
     || state.webSocketDebuggerUrl !== `ws://127.0.0.1:${state.port}/devtools/browser/${state.browserId}`
     || typeof state.userDataDir !== "string" || !state.userDataDir || state.networkMode !== networkMode) throw new Error("FOCUS_BLOCKED: invalid host gateway identity");
+  if (explicit) {
+    const remaining = windowRemaining(state.window, sessionId);
+    if (remaining > approval.seconds * 1000) throw new Error("FOCUS_BLOCKED: host returned a longer window than requested");
+  } else if (state.window !== undefined) throw new Error("FOCUS_BLOCKED: passive resume unexpectedly returned a browser window");
   return {...state, interactionMode: approval.mode};
 }
 
@@ -58,15 +67,4 @@ export async function requestProxyRotation(state, confirmedIdle, request = fetch
   const result = await response.json();
   if (result?.stopped !== true || result.networkMode !== "proxy") throw new Error("FOCUS_BLOCKED: unverified proxy shutdown; inspect before relaunch");
   return result;
-}
-
-/** @param {(url: string, options: RequestInit) => Promise<Response>} [request] */
-export async function resumeException(receipt, networkMode, request = fetch) {
-  const state = await requestHostResume(request, {mode: "background", seconds: 60, targets: [], networkMode});
-  if (receipt.mode !== state.mode || receipt.focusProtocol !== state.focusProtocol || receipt.browserId !== state.browserId
-    || receipt.webSocketDebuggerUrl !== state.webSocketDebuggerUrl || receipt.port !== state.port
-    || receipt.directPort !== state.directPort || receipt.userDataDir !== state.userDataDir) {
-    throw new Error("FOCUS_BLOCKED: time-exception receipt does not match the running network-verified browser");
-  }
-  return {...state, interactionMode: receipt.interactionMode, timeException: receipt.timeException};
 }

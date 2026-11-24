@@ -1,15 +1,14 @@
-import {constants, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync} from "node:fs";
+import {constants, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync} from "node:fs";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
-import {randomUUID} from "node:crypto";
-import {createInterface} from "node:readline/promises";
-import {actions, FOCUS_PROTOCOL, FocusDenied, parseLease, type Lease} from "./policy.ts";
-import {FOREGROUND_SECONDS} from "./limits.js";
+import {randomBytes, randomUUID} from "node:crypto";
+import {actions, FocusDenied, parseLease, type Lease} from "./policy.ts";
+import {FOREGROUND_SECONDS, sessionIdPattern, validDuration} from "./limits.js";
 
 export function focusDirectory(): string {
   return process.env.BROWSER_TOOLS_FOCUS_RUNTIME_DIR || join(process.env.XDG_RUNTIME_DIR || tmpdir(), `browser-tools-focus-${process.getuid?.()}`);
 }
-export const leasePath = () => join(focusDirectory(), "foreground.json");
+export const leasePath = () => join(focusDirectory(), "window.json");
 export const gatewayPath = () => join(focusDirectory(), "gateway.json");
 export function readPrivateJson(file: string): any {
   assertPrivateDirectory();
@@ -35,7 +34,11 @@ export function writePrivateJson(file: string, value: unknown): void {
   } finally { rmSync(temporary, {force: true}); }
 }
 export function readLease(): unknown {
-  try { return readPrivateJson(leasePath()); } catch { throw new FocusDenied("no valid owner-issued foreground lease"); }
+  try {
+    const lease = readPrivateJson(leasePath());
+    if (lease?.window) return lease;
+  } catch {}
+  throw new FocusDenied("no valid desktop-confirmed browser window");
 }
 export function consumeLaunch(now = Date.now()): Lease {
   assertPrivateDirectory();
@@ -49,45 +52,44 @@ export function consumeLaunch(now = Date.now()): Lease {
     return lease;
   } finally { closeSync(fd); rmSync(lock, {force: true}); }
 }
-export function grantArguments(args: string[], browserId: string, now = Date.now()): Lease {
-  let seconds = FOREGROUND_SECONDS, launch = false;
-  let targets: string[] = [], selected: Lease["actions"] = [];
-  for (let index = 0; index < args.length; index++) {
-    const arg = args[index];
-    if (arg === "--launch") launch = true;
-    else if (arg === "--seconds") seconds = Number(args[++index]);
-    else if (arg === "--target") targets.push(args[++index]!);
-    else if (arg === "--actions") selected = args[++index]?.split(",") as Lease["actions"];
-    else throw new Error(`Use grant [--launch] --actions ACTIONS [--target ID] [--seconds 1..${FOREGROUND_SECONDS}]`);
-  }
-  if (!Number.isInteger(seconds) || seconds < 1 || seconds > FOREGROUND_SECONDS || !selected?.length || (!launch && !targets.length)) throw new Error("Specify bounded actions, duration and an owned target, or --launch");
-  return parseLease({version: 1, browserId, issuedAt: now, expiresAt: now + seconds * 1000, targets, actions: selected, launch}, browserId, now);
+export interface WindowRequest {
+  mode: "foreground" | "direct";
+  seconds: number;
+  sessionId: string;
+  targets: string[];
+  pinnedBrowserId?: string;
 }
 
-export function approveForeground(request: unknown): Lease {
-  const value = request as {mode?: string; confirmed?: boolean; seconds?: number; targets?: string[]};
-  if (!value || value.confirmed !== true || !["foreground", "direct"].includes(value.mode!)
-    || Object.keys(value).some(key => !["mode", "confirmed", "seconds", "targets"].includes(key))
-    || !Number.isInteger(value.seconds) || value.seconds! < 1 || value.seconds! > FOREGROUND_SECONDS
-    || !Array.isArray(value.targets)) throw new FocusDenied("explicit bounded foreground approval is required");
-  let gateway;
-  if (existsSync(gatewayPath())) {
-    gateway = readPrivateJson(gatewayPath());
-    if (gateway.focusProtocol !== FOCUS_PROTOCOL) throw new FocusDenied("stop the legacy gateway with owner approval before changing modes");
+export function parseWindowRequest(raw: unknown): WindowRequest {
+  const request = raw as WindowRequest;
+  if (!request || typeof request !== "object" || Array.isArray(request)
+    || Object.keys(request).some(key => !["mode", "seconds", "sessionId", "targets", "pinnedBrowserId"].includes(key))
+    || (request.mode !== "foreground" && request.mode !== "direct")
+    || typeof request.sessionId !== "string" || !sessionIdPattern.test(request.sessionId)
+    || (request.seconds !== undefined && !validDuration(request.seconds))
+    || !Array.isArray(request.targets) || request.targets.length > 1
+    || !request.targets.every(id => typeof id === "string" && /^[A-Za-z0-9-]{1,100}$/.test(id))
+    || (request.targets.length > 0 && request.pinnedBrowserId === undefined)
+    || (request.pinnedBrowserId !== undefined && (typeof request.pinnedBrowserId !== "string" || !/^[A-Za-z0-9-]{1,100}$/.test(request.pinnedBrowserId)))) {
+    throw new FocusDenied("invalid browser window request");
   }
-  const now = Date.now(), browserId = gateway?.browserId || randomUUID();
-  const lease = parseLease({version: 1, browserId, issuedAt: now,
-    expiresAt: now + value.seconds! * 1000, targets: value.targets,
-    actions: actions.filter(action => value.mode === "direct" || action !== "direct-cdp"), launch: !gateway}, browserId, now);
-  writePrivateJson(leasePath(), lease);
-  return lease;
+  return {...request, seconds: request.seconds ?? FOREGROUND_SECONDS};
+}
+
+export function windowLease(request: WindowRequest, runningBrowserId?: string, now = Date.now()): Lease {
+  const browserId = runningBrowserId ?? randomUUID();
+  const {sessionId, mode, seconds, pinnedBrowserId, targets} = request;
+  return parseLease({version: 1, browserId, issuedAt: now, expiresAt: now + seconds * 1000,
+    targets: runningBrowserId && pinnedBrowserId === runningBrowserId ? targets : [],
+    actions: actions.filter(action => mode === "direct" || action !== "direct-cdp"), launch: !runningBrowserId,
+    window: {sessionId, token: randomBytes(32).toString("hex")}}, browserId, now);
 }
 
 if (import.meta.main) {
   try {
     const [command, ...args] = process.argv.slice(2);
     if (command === "--help") {
-      console.log(`Owner-only foreground leases. Actions: ${actions.join(",")}.\nUse grant [--launch] --actions ACTIONS [--target ID] [--seconds 1..${FOREGROUND_SECONDS}], status or revoke.`);
+      console.log("Use status or revoke. To request a new window, run browser-start.js --foreground from the Pi session and confirm on the desktop.");
     } else if (command === "status" && !args.length) {
       const gateway = readPrivateJson(gatewayPath());
       const lease = parseLease(readLease(), gateway.browserId);
@@ -95,21 +97,6 @@ if (import.meta.main) {
     } else if (command === "revoke" && !args.length) {
       rmSync(leasePath(), {force: true});
       console.log("Foreground lease revoked; sent actions can have uncertain outcomes.");
-    } else if (command === "grant") {
-      if (!process.stdin.isTTY || !process.stdout.isTTY) throw new FocusDenied("grant must be run by the owner in an interactive terminal");
-      const launch = args.includes("--launch");
-      if (launch && existsSync(gatewayPath())) throw new FocusDenied("stop the existing gateway with owner approval before issuing a new launch lease");
-      const browserId = launch ? randomUUID() : readPrivateJson(gatewayPath()).browserId;
-      const lease = grantArguments(args, browserId);
-      console.log(`This permits desktop focus changes for ${Math.round((lease.expiresAt - lease.issuedAt) / 1000)}s. Pause other typing. Actions: ${lease.actions.join(",")}; targets: ${lease.targets.length}; launch: ${launch}.`);
-      console.log("This does not authorize credentials, account mutations or uncertain retries.");
-      const terminal = createInterface({input: process.stdin, output: process.stdout});
-      try {
-        if (await terminal.question('Type "allow foreground" to approve: ') !== "allow foreground") throw new FocusDenied("foreground approval not supplied");
-      } finally { terminal.close(); }
-      parseLease(lease, browserId);
-      writePrivateJson(leasePath(), lease);
-      console.log("Foreground lease granted. Never extend it automatically.");
-    } else throw new Error("Use --help for owner-only foreground lease commands");
+    } else throw new Error("Use --help for browser window commands");
   } catch (error) { console.error((error as Error).message); process.exitCode = 1; }
 }

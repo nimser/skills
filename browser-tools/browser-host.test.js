@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
-import {mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {mkdtempSync, readFileSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {test} from "node:test";
@@ -76,33 +76,17 @@ test("host ownership and focus preflight without a real browser", async t => {
       assert.match(result.stdout, /remains open/);
       assert.equal(readState(), undefined);
     });
-    await t.test("expired task budgets block explicit startup before host approval or launch", () => {
+    await t.test("requires a Pi session for foreground and refuses legacy exception files", () => {
       writeState(state);
-      const timer = join(directory, "session-guard.state");
-      writeFileSync(timer, `${Date.now() - 120_000}\t1\n`);
-      try {
-        const result = script("browser-start.js", ["--foreground", "--direct-cdp"]);
-        assert.equal(result.status, 1);
-        assert.match(result.stderr, /EXPIRED/);
-        assert.deepEqual(readState(), state);
-      } finally { rmSync(timer); }
-    });
-    await t.test("invalid or shared exception receipts fail before broker fallback", () => {
-      writeState(state);
-      const receipt = join(directory, "receipt.json");
-      for (const text of ["null", "false", "{}", "{invalid"]) {
-        writeFileSync(receipt, text, {mode: 0o600});
-        const result = script("browser-start.js", ["--foreground", "--exception", receipt]);
-        assert.equal(result.status, 1);
-        assert.match(result.stderr, /FOCUS_BLOCKED: (receipt mode|invalid time-exception receipt JSON)/);
-        assert.deepEqual(readState(), state);
-      }
-      rmSync(receipt);
-      writeFileSync(receipt, "{}", {mode: 0o644});
-      const shared = script("browser-start.js", ["--foreground", "--exception", receipt]);
-      assert.equal(shared.status, 1);
-      assert.match(shared.stderr, /unsafe time-exception receipt/);
-      rmSync(receipt);
+      const result = script("browser-start.js", ["--foreground", "--direct-cdp"], {PI_SESSION_ID: ""});
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /valid Pi session/);
+      const legacy = script("browser-start.js", ["--foreground", "--exception", "legacy.json"]);
+      assert.equal(legacy.status, 1);
+      assert.match(legacy.stderr, /Use browser-start/);
+      assert.equal(script("session-guard.js", ["start"]).status, 1);
+      assert.equal(script("session-guard.js", ["stop"]).status, 1);
+      assert.deepEqual(readState(), state);
     });
     await t.test("rejects proxy configuration without replacing recorded identity", () => {
       writeState(state);

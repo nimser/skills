@@ -156,14 +156,14 @@ export function resolveCdpUrl() {
 	if (state?.mode === "host" && state.focusProtocol === FOCUS_PROTOCOL) {
 		validPort(state.port);
 		const endpoint = modeEndpoint(state);
-		if (!endpoint.browserURL) throw new Error("FOCUS_BLOCKED: time-exception direct CDP requires browserWSEndpoint, not browserURL");
+		if (!endpoint.browserURL) throw new Error("FOCUS_BLOCKED: confirmed direct CDP requires browserWSEndpoint, not browserURL");
 		return endpoint.browserURL;
 	}
 	throw new Error("FOCUS_BLOCKED: no guarded host gateway is recorded; raw environment endpoints are unsupported");
 }
 
 export async function connectBrowser(_unused, timeoutMs = 5000) {
-	return connectGuardedBrowser(readState(), runtimeDir(), timeoutMs);
+	return connectGuardedBrowser(readState(), timeoutMs);
 }
 
 async function processExists(pid) {
